@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PathSense — Pedestrian Risk Intelligence</title>
+<meta name="description" content="PathSense: AI-powered pedestrian accident risk predictor with full voice output for blind and low-vision users." />
+<link rel="icon" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+<!-- Add this to link your new CSS file -->
+  <link rel="stylesheet" href="index.css" />
+
+</head>
+<body>
+
+<!-- Skip to main content (keyboard/screen reader) -->
+<a class="skip-link" href="#main-form">Skip to prediction form</a>
+
+<!-- Screen reader live regions -->
+<div id="sr-live"  class="sr-only" role="status"  aria-live="polite"   aria-atomic="true"></div>
+<div id="sr-alert" class="sr-only" role="alert"   aria-live="assertive" aria-atomic="true"></div>
+
+<!-- Accessibility toolbar -->
+<div class="a11y-toolbar" role="toolbar" aria-label="Accessibility controls">
+  <button class="a11y-btn" id="btn-hc" aria-pressed="false"
+          onclick="toggleHighContrast()" title="Toggle high contrast (Alt+C)">
+    ◑ Contrast
+  </button>
+  <button class="a11y-btn" id="btn-autovoice" aria-pressed="true"
+          onclick="toggleAutoVoice()" title="Toggle automatic voice readout">
+    🔊 Auto-Voice
+  </button>
+</div>
+
+<div class="shell">
+
+  <header role="banner">
+    <div class="logo">
+      <div class="logo-icon" aria-hidden="true">PS</div>
+      <div>
+        <div class="logo-name">PathSense</div>
+        <div class="logo-sub">Risk Intelligence</div>
+      </div>
+    </div>
+    <div class="header-badge">Voice-First Safety Assistant</div>
+  </header>
+
+  <section class="hero" aria-labelledby="hero-heading">
+    <div class="hero-copy">
+      <div class="hero-eyebrow">Pedestrian Safety Dashboard</div>
+      <h1 id="hero-heading">Assess street risk before you move.</h1>
+      <p>
+        PathSense combines prediction, voice guidance, emergency access, and live location context in one focused safety workflow.
+      </p>
+      <div class="hero-actions" aria-label="Keyboard shortcuts">
+        <span class="hero-chip"><kbd>R</kbd> Run prediction</span>
+        <span class="hero-chip"><kbd>Space</kbd> Read result</span>
+        <span class="hero-chip"><kbd>S</kbd> Stop speech</span>
+      </div>
+    </div>
+    <div class="hero-panel" aria-label="Key benefits">
+      <div class="hero-stat">
+        <span class="hero-stat-label">Built For</span>
+        <strong>Accessible, low-friction risk checks</strong>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-label">Core Inputs</span>
+        <strong>Road, weather, vehicles, traffic control</strong>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-label">Fast Actions</span>
+        <strong>Prediction, voice summary, SOS fallback</strong>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── VOICE CONTROL BAR ── -->
+  <div class="voice-bar" role="region" aria-label="Voice output controls">
+    <div class="voice-indicator">
+      <div class="voice-dot" id="voice-dot" aria-hidden="true"></div>
+      <span class="voice-status-text" id="voice-status-text" aria-live="polite">
+        Voice ready — results read aloud automatically
+      </span>
+    </div>
+    <div class="voice-controls" role="group" aria-label="Voice actions">
+      <button class="btn-voice" id="btn-read-result" onclick="speakLastResult()"
+              aria-label="Read last result aloud (Space)" disabled>
+        🔊 Read Result
+      </button>
+      <button class="btn-voice" onclick="speakPageSummary()"
+              aria-label="Read page summary aloud">
+        📋 Summary
+      </button>
+      <button class="btn-voice stop" onclick="stopSpeaking()"
+              aria-label="Stop speaking (S)">
+        ⏹ Stop
+      </button>
+    </div>
+  </div>
+
+  <!-- ── VOICE SETTINGS ── -->
+  <div class="voice-settings" role="group" aria-label="Voice settings">
+    <div class="voice-setting">
+      <label for="voice-speed">Speed</label>
+      <input type="range" id="voice-speed" min="0.5" max="2" step="0.1" value="1"
+             aria-valuemin="0.5" aria-valuemax="2" aria-valuenow="1"
+             oninput="updateVoiceSetting('speed', this.value)" />
+      <span class="voice-val" id="speed-val" aria-live="polite">1.0×</span>
+    </div>
+    <div class="voice-setting">
+      <label for="voice-pitch">Pitch</label>
+      <input type="range" id="voice-pitch" min="0.5" max="2" step="0.1" value="1"
+             aria-valuemin="0.5" aria-valuemax="2" aria-valuenow="1"
+             oninput="updateVoiceSetting('pitch', this.value)" />
+      <span class="voice-val" id="pitch-val" aria-live="polite">1.0</span>
+    </div>
+    <div class="voice-setting">
+      <label for="voice-select">Voice</label>
+      <select id="voice-select" aria-label="Choose speech voice"
+              style="min-width:150px; font-size:11px; padding:6px 10px; min-height:32px;">
+        <option value="">Default</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ── MAIN ── -->
+  <main id="main-content">
+    <div class="main-grid">
+
+      <!-- FORM CARD -->
+      <section aria-labelledby="form-heading">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon" aria-hidden="true">⚙️</span>
+            <h2 class="card-title" id="form-heading">Scenario Parameters</h2>
+          </div>
+          <div class="card-body">
+
+            <!-- ZONE 1: Auto-detected values -->
+            <div class="auto-panel" aria-label="Auto-detected conditions">
+              <div class="auto-panel-title">✅ Auto-Detected Conditions</div>
+              <div class="auto-chips">
+                <div class="auto-chip chip-loading" id="chip-weather"><span class="chip-icon">🌤️</span> <span>Weather…</span></div>
+                <div class="auto-chip" id="chip-lighting"><span class="chip-icon">💡</span> <span class="chip-value" id="chip-lighting-val">—</span></div>
+                <div class="auto-chip" id="chip-time"><span class="chip-icon">🕐</span> <span class="chip-value" id="chip-time-val">—</span></div>
+                <div class="auto-chip" id="chip-day"><span class="chip-icon">📅</span> <span class="chip-value" id="chip-day-val">—</span></div>
+              </div>
+              <!-- PROOF PANEL: weather card + mini calendar -->
+              <div class="proof-panel" id="proof-panel">
+                <div class="weather-card" id="proof-weather">
+                  <div class="weather-icon-big" id="proof-weather-icon">…</div>
+                  <div class="weather-info">
+                    <div class="w-label">Current Weather</div>
+                    <div class="w-condition" id="proof-weather-name">—</div>
+                    <div class="w-sub" id="proof-weather-sub">Auto-detected</div>
+                  </div>
+                </div>
+                <div class="mini-cal" id="proof-calendar">
+                  <div class="mini-cal-header" id="cal-month-label">—</div>
+                  <div class="mini-cal-grid" id="cal-grid"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hidden auto-fill inputs used by prediction -->
+            <input type="hidden" id="f-weather" value="Clear" />
+            <input type="hidden" id="f-lighting" value="Daylight" />
+            <input type="hidden" id="f-time" value="Morning" />
+            <input type="hidden" id="f-day" value="Monday" />
+
+            <!-- ZONE 2: Manual fields (Road context) -->
+            <form id="main-form" aria-label="Accident scenario input"
+                  onsubmit="event.preventDefault(); runPrediction();">
+              <div class="form-grid form-grid-spaced">
+
+                <div class="field">
+                  <label for="f-road-type">Road Type</label>
+                  <select id="f-road-type" aria-required="true">
+                    <option>Urban Road</option><option>State Highway</option>
+                    <option>National Highway</option><option>Rural Road</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label for="f-road-cond">Road Condition</label>
+                  <select id="f-road-cond" aria-required="true">
+                    <option>Dry</option><option>Wet</option>
+                    <option>Icy</option><option>Under Construction</option>
+                  </select>
+                </div>
+
+                <div class="field full">
+                  <label for="f-speed">Speed Limit (km/h)</label>
+                  <input type="number" id="f-speed" value="40" min="0" max="200"
+                         aria-required="true" aria-describedby="speed-hint" />
+                  <span id="speed-hint" class="sr-only">Number between 0 and 200 km/h</span>
+                </div>
+
+              </div>
+
+              <!-- ZONE 3: Voice inputs -->
+              <div class="voice-input-section">
+                <label class="section-label">Voice Input - Vehicles and Traffic</label>
+                <!-- Fallback note for unsupported browsers -->
+                <div class="voice-fallback-note" id="voice-fallback-note">
+                  ⚠️ Voice input is not supported in this browser (try Chrome or Edge).
+                  Please use the fields below manually.
+                </div>
+                <button type="button" class="btn-voice-input" id="btn-voice-input"
+                        aria-label="Start guided voice input for vehicles and traffic control"
+                        onclick="startVoiceSession()">
+                  🎤 Start Voice Input
+                </button>
+                <div class="voice-status-chip" id="voice-input-status" aria-live="polite"></div>
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="f-vehicles">Vehicles Involved</label>
+                    <input type="number" id="f-vehicles" value="1" min="1" max="20"
+                           aria-required="true" aria-describedby="vehicles-hint" />
+                    <span id="vehicles-hint" class="sr-only">Number between 1 and 20</span>
+                  </div>
+                  <div class="field">
+                    <label for="f-traffic">Traffic Control</label>
+                    <select id="f-traffic" aria-required="true">
+                      <option>Signals</option><option>Signs</option>
+                      <option>None</option><option>Unknown</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <button type="submit" class="btn-predict" id="btn-predict"
+                      aria-label="Analyse risk for current scenario (R)">
+                <span class="btn-text">Analyse Risk</span>
+                <span class="spinner" aria-hidden="true"></span>
+              </button>
+            </form>
+<!-- --------------------------------------------------------------------------------------------
+ ------------------------------------------------------------------------------------------------------------------------------------------ 
+ --------------------------------------------------------------------------------------------
+ ------------------------------------------------------------------------------------------------------------------------------------------
+ -->
+            <div class="auto-panel" id="sos-panel" aria-labelledby="sos-heading" style="margin-top:18px;">
+              <p class="sos-intro">
+                Send a help message to trusted contacts with full international numbers. You can also include your live location.
+              </p>
+              <div class="auto-panel-title" id="sos-heading">Emergency SOS</div>
+              <div class="form-grid">
+                <div class="field full">
+                  <label for="f-sos-phones">Emergency contact numbers</label>
+                  <input type="text" id="f-sos-phones"
+                         placeholder="e.g. +919876543210,"
+                         inputmode="tel"
+                         autocomplete="tel"
+                         pattern="^\+(?:[1-9]\d{7,14})(?:\s*,\s*\+(?:[1-9]\d{7,14}))*$"
+                         aria-describedby="sos-phones-hint sos-phone-error" />
+                  <span id="sos-phones-hint" class="field-hint">
+                    Enter one or more full international numbers separated by commas.
+                  </span>
+                  <div id="sos-phone-error" class="field-error" role="alert" aria-live="assertive"></div>
+                </div>
+                <div class="field full">
+                  <label for="f-sos-msg">SOS message</label>
+                  <textarea id="f-sos-msg" rows="3"
+                            aria-describedby="sos-msg-hint">SOS! I need immediate help. Please contact me right away.</textarea>
+                  <span id="sos-msg-hint" class="field-hint">
+                    Keep it short and clear. Live location can be added automatically.
+                  </span>
+                </div>
+              </div>
+              <label class="sos-toggle">
+                <input type="checkbox" id="f-sos-location" checked />
+                <span>Include my live location in the SOS message</span>
+              </label>
+              <div id="sos-location-note" class="field-hint">
+                Waiting for live location. If unavailable, the message will be sent without it.
+              </div>
+              <button type="button" class="btn-voice stop" id="btn-sos"
+                      onclick="sendSOS()">
+                 Send SOS
+              </button>
+              <div id="sos-status" class="sos-status" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+<!-- ------------------------------------------------------------------------------------------------
+ ------------------------------------------------------------------------------------------------------------------------------------------
+ --------------------------------------------------------------------------------------------
+ ------------------------------------------------------------------------------------------------------------------------------------------
+ ------------------------------------------------------------------------------------------------ -->
+      <!-- RESULT CARD -->
+      <section aria-labelledby="result-heading">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon" aria-hidden="true">📊</span>
+            <h2 class="card-title" id="result-heading">Risk Assessment</h2>
+          </div>
+          <div class="card-body">
+
+            <div class="result-empty" id="result-empty" role="status">
+              <div class="idle-icon" aria-hidden="true">SCAN</div>
+              <div>Configure scenario and click <strong>Analyse Risk</strong></div>
+            </div>
+
+            <div id="result-content" class="result-content"
+                 role="region" aria-label="Prediction result" aria-live="polite">
+              <div class="gauge-wrap">
+
+                <div class="gauge" id="gauge-img" role="img" aria-label="Risk gauge">
+                  <svg viewBox="0 0 180 90" width="180" height="90" aria-hidden="true">
+                    <path d="M10,90 A80,80 0 0,1 170,90" fill="none" stroke="#d1fae5" stroke-width="14" stroke-linecap="round"/>
+                    <path id="gauge-arc" d="M10,90 A80,80 0 0,1 170,90" fill="none" stroke="#15803d"
+                          stroke-width="14" stroke-linecap="round"
+                          stroke-dasharray="251.2" stroke-dashoffset="251.2"
+                          style="transition:stroke-dashoffset 1s ease,stroke 0.5s ease;"/>
+                  </svg>
+                  <div class="gauge-value">
+                    <div class="gauge-pct" id="gauge-pct" aria-hidden="true">—</div>
+                    <div class="gauge-label" aria-hidden="true">HIGH-RISK PROB.</div>
+                  </div>
+                </div>
+
+                <div class="risk-badge" id="risk-badge" role="status">
+                  <div class="risk-dot" aria-hidden="true"></div>
+                  <span id="risk-label">—</span>
+                </div>
+
+                <p class="risk-message" id="risk-message">—</p>
+
+                <!-- Speak button inside result for easy reach -->
+                <button class="btn-speak-result" id="btn-speak-inline"
+                        onclick="speakLastResult()" style="display:none;"
+                        aria-label="Read this result aloud">
+                  🔊 Read Result Aloud
+                </button>
+
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card sos-card" id="sos-card-shell">
+          <div class="card-header">
+            <span class="card-icon" aria-hidden="true">🆘</span>
+            <h2 class="card-title">Emergency SOS</h2>
+          </div>
+          <div class="card-body">
+            <div id="sos-card-slot"></div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /main-grid -->
+
+    <!-- MAP SECTION -->
+    <div class="map-section card" id="map-wrap" role="region" aria-label="Current Location">
+      <div class="card-header map-header">
+        <div class="map-heading">
+          <span class="card-icon" aria-hidden="true">MAP</span>
+          <h2 class="card-title">Live Location</h2>
+        </div>
+        <button id="btn-toggle-map" class="map-toggle" onclick="toggleMap()" aria-expanded="true">
+          Collapse Map
+        </button>
+      </div>
+      <div class="card-body map-body" id="map-body">
+        <div id="map"></div>
+        <div id="map-fallback" class="map-fallback" hidden>
+          <div class="map-fallback-copy">
+            <strong>Map view unavailable</strong>
+            <span id="map-fallback-status">Trying to detect your location.</span>
+          </div>
+          <div class="map-fallback-coords" id="map-fallback-coords">Lat: -- | Lon: --</div>
+          <a id="map-open-link" class="map-open-link" href="https://www.openstreetmap.org" target="_blank" rel="noopener noreferrer">
+            Open in OpenStreetMap
+          </a>
+        </div>
+        <div id="map-message" class="map-message">
+          Tracking live location
+        </div>
+      </div>
+    </div>
+
+
+  </main>
+
+  <footer role="contentinfo">
+    PathSense &copy; 2025 | Pedestrian Safety Intelligence | Voice-First Accessible Design
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════════
+const API = 'http://localhost:8000';
+
+// ═══════════════════════════════════════════════════════════════
+//  SPEECH ENGINE
+// ═══════════════════════════════════════════════════════════════
+const synth  = window.speechSynthesis;
+let voiceRate  = 1.0;
+let voicePitch = 1.0;
+let autoVoice  = true;
+let lastResultText = '';
+let voices = [];
+
+function loadVoices() {
+  voices = synth.getVoices();
+  const sel = document.getElementById('voice-select');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">Default</option>';
+  voices.forEach((v, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${v.name} (${v.lang})`;
+    if (String(i) === prev) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = loadVoices;
+loadVoices();
+
+function speak(text, interrupt = false) {
+  if (!synth) return;
+  if (interrupt) synth.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.rate  = voiceRate;
+  utt.pitch = voicePitch;
+  const idx = parseInt(document.getElementById('voice-select').value);
+  if (!isNaN(idx) && voices[idx]) utt.voice = voices[idx];
+
+  utt.onstart = () => { setVoiceDot('speaking'); setVoiceStatus('Speaking…'); };
+  utt.onend   = () => { setVoiceDot('active');   setVoiceStatus('Voice ready'); };
+  utt.onerror = () => { setVoiceDot('active');   setVoiceStatus('Voice ready'); };
+  synth.speak(utt);
+}
+
+function stopSpeaking() {
+  synth.cancel();
+  setVoiceDot('active');
+  setVoiceStatus('Voice ready');
+  announceToSR('Speech stopped.');
+}
+
+function speakLastResult() {
+  if (!lastResultText) {
+    speak('No result yet. Submit a scenario first.', true);
+    return;
+  }
+  speak(lastResultText, true);
+}
+
+function speakPageSummary() {
+  const txt =
+    'PathSense Pedestrian Risk Assessment. ' +
+    'This tool uses a trained AI model to predict the probability of a serious or fatal pedestrian accident ' +
+    'based on conditions like weather, lighting, road type, speed limit, and time of day. ' +
+    'Use the form to set scenario parameters, then activate Analyse Risk. ' +
+    'Keyboard shortcuts: R to run prediction, Space to hear the result, S to stop speech. ' +
+    (lastResultText ? 'Latest result: ' + lastResultText : 'No prediction has been made yet.');
+  speak(txt, true);
+}
+
+function updateVoiceSetting(type, val) {
+  const num = parseFloat(val);
+  if (type === 'speed') {
+    voiceRate = num;
+    document.getElementById('speed-val').textContent = val + '×';
+    document.getElementById('voice-speed').setAttribute('aria-valuenow', val);
+  } else {
+    voicePitch = num;
+    document.getElementById('pitch-val').textContent = val;
+    document.getElementById('voice-pitch').setAttribute('aria-valuenow', val);
+  }
+}
+
+function normalizePhoneNumbers(value) {
+  return value
+    .split(/[\s,;]+/)
+    .map(part => part.replace(/[^\d+]/g, ''))
+    .filter(Boolean);
+}
+
+function isValidE164PhoneNumber(value) {
+  return /^\+[1-9]\d{7,14}$/.test(value);
+}
+
+function setSosPhoneError(message = '') {
+  const errorEl = document.getElementById('sos-phone-error');
+  const inputEl = document.getElementById('f-sos-phones');
+  errorEl.textContent = message;
+  errorEl.style.display = message ? 'block' : 'none';
+  inputEl.setAttribute('aria-invalid', message ? 'true' : 'false');
+}
+
+function setSosStatus(message = '', tone = '') {
+  const statusEl = document.getElementById('sos-status');
+  statusEl.textContent = message;
+  statusEl.className = `sos-status${tone ? ' ' + tone : ''}`;
+  statusEl.style.display = message ? 'block' : 'none';
+}
+
+function setSosSending(isSending) {
+  const btn = document.getElementById('btn-sos');
+  btn.disabled = isSending;
+  btn.textContent = isSending ? 'Sending SOS...' : '🆘 Send SOS';
+}
+
+function getLocationSmsSuffix() {
+  const includeLocation = document.getElementById('f-sos-location').checked;
+  if (!includeLocation || !window.latestPosition) return '';
+  const { lat, lon } = window.latestPosition;
+  return ` Location: https://maps.google.com/?q=${lat},${lon}`;
+}
+
+function updateSosLocationNote() {
+  const noteEl = document.getElementById('sos-location-note');
+  if (!noteEl) return;
+  if (window.latestPosition) {
+    const { lat, lon } = window.latestPosition;
+    noteEl.textContent = `Live location ready: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  } else {
+    noteEl.textContent = 'Waiting for live location. If unavailable, the message will be sent without it.';
+  }
+}
+
+function mountSosCard() {
+  const panel = document.getElementById('sos-panel');
+  const slot = document.getElementById('sos-card-slot');
+  if (!panel || !slot) return;
+  slot.appendChild(panel);
+  panel.style.marginTop = '0';
+}
+
+async function readApiError(res) {
+  try {
+    const data = await res.json();
+    if (typeof data?.detail === 'string') return data.detail;
+    if (Array.isArray(data?.detail)) {
+      return data.detail.map(item => item?.msg || JSON.stringify(item)).join(', ');
+    }
+  } catch (_) {
+    // Fall back to plain text below if the response is not JSON.
+  }
+
+  try {
+    const text = await res.text();
+    if (text) return text;
+  } catch (_) {
+    // Ignore text parsing errors and use the HTTP status instead.
+  }
+
+  return `HTTP ${res.status}`;
+}
+// ═══════════════════════════════════════════════════════════════
+//  SOS HELP REQUEST
+// ═══════════════════════════════════════════════════════════════
+async function sendSOS() {
+  const phonesInput = document.getElementById('f-sos-phones');
+  const msgInput = document.getElementById('f-sos-msg');
+  const phoneText = phonesInput.value.trim();
+  const messageBase = msgInput.value.trim() || 'SOS! I need immediate help.';
+
+  setSosPhoneError('');
+  setSosStatus('');
+
+  if (!phoneText) {
+    setSosPhoneError('Enter at least one emergency contact number.');
+    phonesInput.focus();
+    return;
+  }
+
+  const recipients = normalizePhoneNumbers(phoneText);
+  const invalidRecipients = recipients.filter(num => !isValidE164PhoneNumber(num));
+
+  if (!recipients.length || invalidRecipients.length) {
+    const invalidText = invalidRecipients.length
+      ? ` Invalid: ${invalidRecipients.join(', ')}.`
+      : '';
+    setSosPhoneError(`Use full international numbers like +1234567890.${invalidText}`);
+    phonesInput.focus();
+    return;
+  }
+
+  const message = `${messageBase}${getLocationSmsSuffix()}`;
+  announceToSR('Sending SOS request to the server.');
+  setSosSending(true);
+  setSosStatus('Sending SOS via Twilio...', 'info');
+  const payload = { phone_numbers: recipients, message };
+
+  try {
+    const res = await fetch(`${API}/send-sos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errText = await readApiError(res);
+      throw new Error(errText);
+    }
+
+    const result = await res.json();
+    showToast(`SOS sent to ${result.sent} recipient(s).`);
+    announceToSR('SOS message sent successfully.');
+    setSosStatus(`SOS sent to ${result.sent} recipient(s).`, 'success');
+  } catch (error) {
+    console.error('SOS send failed:', error);
+    const messageText = error?.message || 'Unknown SOS error.';
+    showToast(`SOS send failed: ${messageText}. Opening SMS app as fallback.`);
+    announceToSR(`SOS send failed. ${messageText}. Falling back to SMS composer.`);
+    setSosStatus(`Twilio send failed. ${messageText} Opening your SMS app instead.`, 'error');
+    const smsUrl = `sms:${recipients.join(',')}?body=${encodeURIComponent(message)}`;
+    window.location.href = smsUrl;
+  } finally {
+    setSosSending(false);
+  }
+}
+
+function toggleAutoVoice() {
+  autoVoice = !autoVoice;
+  const btn = document.getElementById('btn-autovoice');
+  btn.setAttribute('aria-pressed', String(autoVoice));
+  btn.textContent = autoVoice ? '🔊 Auto-Voice' : '🔇 Auto-Voice';
+  const msg = autoVoice ? 'Automatic voice readout enabled.' : 'Automatic voice readout disabled.';
+  announceToSR(msg);
+  speak(msg, true);
+}
+
+function setVoiceDot(state) {
+  document.getElementById('voice-dot').className = 'voice-dot ' + (state === 'idle' ? '' : state);
+}
+function setVoiceStatus(msg) {
+  document.getElementById('voice-status-text').textContent = msg;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN READER ANNOUNCEMENTS
+// ═══════════════════════════════════════════════════════════════
+function announceToSR(msg, urgent = false) {
+  const el = document.getElementById(urgent ? 'sr-alert' : 'sr-live');
+  el.textContent = '';
+  requestAnimationFrame(() => { el.textContent = msg; });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HIGH CONTRAST
+// ═══════════════════════════════════════════════════════════════
+function toggleHighContrast() {
+  document.body.classList.toggle('hc');
+  const on = document.body.classList.contains('hc');
+  document.getElementById('btn-hc').setAttribute('aria-pressed', String(on));
+  localStorage.setItem('ps-hc', on ? '1' : '');
+  announceToSR(on ? 'High contrast mode on.' : 'High contrast mode off.');
+}
+if (localStorage.getItem('ps-hc')) {
+  document.body.classList.add('hc');
+  document.getElementById('btn-hc').setAttribute('aria-pressed', 'true');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+  if (e.altKey && (e.key === 'c' || e.key === 'C')) { toggleHighContrast(); return; }
+  if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); speakLastResult(); }
+  if (e.key === 's' || e.key === 'S') stopSpeaking();
+  if (e.key === 'r' || e.key === 'R') document.getElementById('btn-predict').click();
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 5000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GAUGE
+// ═══════════════════════════════════════════════════════════════
+function setGauge(prob, color) {
+  const arc = document.getElementById('gauge-arc');
+  arc.style.strokeDashoffset = 251.2 - prob * 251.2;
+  arc.style.stroke = color;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PREDICTION
+// ═══════════════════════════════════════════════════════════════
+async function runPrediction() {
+  const btn = document.getElementById('btn-predict');
+  btn.classList.add('loading'); btn.disabled = true;
+  announceToSR('Analysing risk, please wait.');
+  setVoiceDot('speaking');
+  setVoiceStatus('Contacting server…');
+
+  const payload = {
+    weather:         document.getElementById('f-weather').value,
+    lighting:        document.getElementById('f-lighting').value,
+    road_type:       document.getElementById('f-road-type').value,
+    road_condition:  document.getElementById('f-road-cond').value,
+    speed_limit:     parseInt(document.getElementById('f-speed').value),
+    time_category:   document.getElementById('f-time').value,
+    day_of_week:     document.getElementById('f-day').value,
+    num_vehicles:    parseInt(document.getElementById('f-vehicles').value),
+    traffic_control: document.getElementById('f-traffic').value,
+  };
+
+  try {
+    const res = await fetch(`${API}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    showResult(data, payload);
+  } catch (err) {
+    const msg = 'Could not reach the PathSense server. Please start the API on port 8000 and try again.';
+    showToast('⚠ ' + msg);
+    announceToSR(msg, true);
+    speak(msg, true);
+    setVoiceDot('active');
+    setVoiceStatus('Voice ready');
+  } finally {
+    btn.classList.remove('loading'); btn.disabled = false;
+  }
+}
+
+function buildSpokenResult(data, payload) {
+  const pct   = Math.round(data.probability * 100);
+  const level = data.risk_level.replace('VERY_HIGH', 'very high').replace('_', ' ').toLowerCase();
+  return [
+    'Risk assessment complete.',
+    `Conditions: ${payload.weather} weather, ${payload.lighting} lighting, ` +
+    `${payload.road_type}, road is ${payload.road_condition}, ` +
+    `speed limit ${payload.speed_limit} kilometres per hour, ` +
+    `${payload.day_of_week} ${payload.time_category.toLowerCase()}, ` +
+    `${payload.num_vehicles} vehicle${payload.num_vehicles > 1 ? 's' : ''} involved, ` +
+    `traffic control: ${payload.traffic_control}.`,
+    `Result: ${level} risk. Probability of serious or fatal accident is ${pct} percent.`,
+    data.message,
+  ].join(' ');
+}
+
+function showResult(data, payload) {
+  document.getElementById('result-empty').style.display = 'none';
+  document.getElementById('result-content').style.display = 'block';
+
+  const pct = Math.round(data.probability * 100);
+
+  document.getElementById('gauge-pct').textContent = pct + '%';
+  document.getElementById('gauge-pct').style.color = data.color;
+  document.getElementById('gauge-img').setAttribute('aria-label',
+    `Risk probability: ${pct} percent`);
+
+  const badge = document.getElementById('risk-badge');
+  badge.className = `risk-badge ${data.risk_level}`;
+  badge.setAttribute('aria-label', `Risk level: ${data.risk_level.replace('_',' ')}`);
+  document.getElementById('risk-label').textContent = data.risk_level.replace('_', ' ');
+  document.getElementById('risk-message').textContent = data.message;
+  document.getElementById('btn-speak-inline').style.display = 'flex';
+  document.getElementById('btn-read-result').disabled = false;
+
+  badge.style.animation = 'none';
+  void badge.offsetWidth;
+  badge.style.animation = '';
+
+  setTimeout(() => setGauge(data.probability, data.color), 50);
+
+  lastResultText = buildSpokenResult(data, payload);
+  const isUrgent = data.risk_level === 'VERY_HIGH';
+
+  // Screen reader
+  announceToSR(lastResultText, isUrgent);
+  setVoiceStatus('Result ready — press Space to hear');
+  setVoiceDot('active');
+
+  // Auto-speak (slight delay so SR doesn't clash)
+  if (autoVoice) setTimeout(() => speak(lastResultText, true), 400);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  SMART AUTO-FILL
+// ═══════════════════════════════════════════════════════════════
+const OWM_KEY = '635735810dfc5cdf2e50791399ecbb92';
+
+function getTimeCategory(h) {
+  if (h >= 5 && h < 12) return 'Morning';
+  if (h >= 12 && h < 17) return 'Afternoon';
+  if (h >= 17 && h < 21) return 'Evening';
+  return 'Night';
+}
+
+function getLighting(h) {
+  if (h >= 5 && h < 7)  return 'Dawn';
+  if (h >= 7 && h < 18) return 'Daylight';
+  if (h >= 18 && h < 20) return 'Dusk';
+  return 'Dark';
+}
+
+function autoFillTimeFields() {
+  const now = new Date();
+  const h = now.getHours();
+  const day = now.toLocaleDateString('en-IN', { weekday: 'long' });
+  const time = getTimeCategory(h);
+  const lighting = getLighting(h);
+
+  document.getElementById('f-time').value = time;
+  document.getElementById('f-day').value = day;
+  document.getElementById('f-lighting').value = lighting;
+
+  document.getElementById('chip-time-val').textContent  = time;
+  document.getElementById('chip-day-val').textContent   = day;
+  document.getElementById('chip-lighting-val').textContent = lighting;
+
+  // Build mini calendar
+  buildCalendar(now);
+}
+
+// const OWM_KEY = '4e50f9698d6c2d60e9fb2f66cc77cd7';
+
+async function fetchWeather(lat, lon) {
+  const chip = document.getElementById('chip-weather');
+  const weatherIcons = { Clear:'☀️', Cloudy:'⛅', Rainy:'🌧️', Stormy:'⚡', Foggy:'🌫️', Hazy:'🌫️' };
+
+  function applyWeather(val, sub) {
+    const icon = weatherIcons[val] || '🌤️';
+    document.getElementById('f-weather').value = val;
+    chip.classList.remove('chip-loading');
+    chip.innerHTML = `<span class="chip-icon">${icon}</span> <span>Weather: <span class="chip-value">${val}</span></span>`;
+    document.getElementById('proof-weather-icon').textContent = icon;
+    document.getElementById('proof-weather-name').textContent = val;
+    document.getElementById('proof-weather-sub').textContent = sub;
+    document.getElementById('proof-panel').style.display = 'grid';
+  }
+
+  if (OWM_KEY === 'YOUR_OPENWEATHERMAP_API_KEY') {
+    applyWeather('Clear', 'No API key — using default');
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OWM_KEY}`);
+    if (!res.ok) {
+      if (res.status === 401) throw new Error('Weather API key invalid or inactive');
+      throw new Error('Weather service unavailable');
+    }
+    const d = await res.json();
+    const desc = d.weather?.[0]?.main;
+    const map = { Clear:'Clear', Clouds:'Cloudy', Rain:'Rainy', Drizzle:'Rainy', Thunderstorm:'Stormy', Fog:'Foggy', Haze:'Hazy', Mist:'Foggy', Snow:'Hazy' };
+    const val = map[desc] || 'Clear';
+    const loc = d.name ? `📍 ${d.name}` : 'Live location';
+    applyWeather(val, loc);
+  } catch(e) {
+    applyWeather('Clear', e?.message || 'Fetch failed — using default');
+  }
+}
+
+function initAutoFill() {
+  autoFillTimeFields();
+  if ('geolocation' in navigator) {
+    navigator.geolocation.getCurrentPosition(
+      pos => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+      ()  => fetchWeather(13.0827, 80.2707)
+    );
+  } else {
+    fetchWeather(13.0827, 80.2707);
+  }
+}
+
+// async function fetchWeather(lat, lon) {
+//   const chip = document.getElementById('chip-weather');
+//   const weatherIcons = { Clear:'☀️', Cloudy:'⛅', Rainy:'🌧️', Stormy:'⚡', Foggy:'🌫️', Hazy:'🌫️' };
+
+//   function applyWeather(val, sub) {
+//     const icon = weatherIcons[val] || '🌤️';
+//     document.getElementById('f-weather').value = val;
+//     chip.classList.remove('chip-loading');
+//     chip.innerHTML = `<span class="chip-icon">${icon}</span> <span>Weather: <span class="chip-value">${val}</span></span>`;
+//     document.getElementById('proof-weather-icon').textContent = icon;
+//     document.getElementById('proof-weather-name').textContent = val;
+//     document.getElementById('proof-weather-sub').textContent = sub;
+//     document.getElementById('proof-panel').style.display = 'grid';
+//   }
+
+//   if (OWM_KEY === 'YOUR_OPENWEATHERMAP_API_KEY') {
+//     applyWeather('Clear', 'No API key - using default');
+//     return;
+//   }
+
+//   try {
+//     const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OWM_KEY}`);
+//     if (!res.ok) throw new Error('bad response');
+
+//     const d = await res.json();
+//     const desc = d.weather[0].main;
+//     const map = {
+//       Clear: 'Clear',
+//       Clouds: 'Cloudy',
+//       Rain: 'Rainy',
+//       Drizzle: 'Rainy',
+//       Thunderstorm: 'Stormy',
+//       Fog: 'Foggy',
+//       Haze: 'Hazy',
+//       Mist: 'Foggy',
+//       Snow: 'Hazy'
+//     };
+
+//     const val = map[desc] || 'Clear';
+//     const loc = d.name ? `📍 ${d.name}` : 'Live location';
+//     applyWeather(val, loc);
+//   } catch (e) {
+//     applyWeather('Clear', 'Fetch failed - using default');
+//   }
+// }
+
+function initAutoFill() {
+  autoFillTimeFields();
+  if ('geolocation' in navigator) {
+    navigator.geolocation.getCurrentPosition(
+      pos => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+      () => fetchWeather(13.0827, 80.2707)
+    );
+  } else {
+    fetchWeather(13.0827, 80.2707);
+  }
+}
+
+
+function buildCalendar(date) {
+  const monthNames = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+  const dayNames = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  const y = date.getFullYear(), m = date.getMonth(), today = date.getDate();
+  const firstDay = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+
+  document.getElementById('cal-month-label').textContent = `${monthNames[m]} ${y}`;
+
+  let html = dayNames.map(d => `<div class="day-hdr">${d}</div>`).join('');
+  for (let i = 0; i < firstDay; i++) html += `<div class="cal-day empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isToday = d === today;
+    html += `<div class="cal-day${isToday ? ' today' : ''}" aria-label="${isToday ? 'Today, ' : ''}${d}">${d}</div>`;
+  }
+  document.getElementById('cal-grid').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  VOICE INPUT SESSION (Web Speech API)
+// ═══════════════════════════════════════════════════════════════
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const voiceSupported = !!SpeechRecognition;
+
+function setVoiceInputStatus(msg) {
+  document.getElementById('voice-input-status').textContent = msg;
+}
+
+function askAndListen(question, onResult, onFail) {
+  const btn = document.getElementById('btn-voice-input');
+  btn.classList.add('listening');
+  btn.textContent = '\ud83d\udd0a Speaking\u2026';
+  setVoiceInputStatus(question);
+
+  // Step 1: Speak the question using TTS
+  synth.cancel();
+  const utt = new SpeechSynthesisUtterance(question);
+  utt.rate  = voiceRate;
+  utt.pitch = voicePitch;
+  const idx = parseInt(document.getElementById('voice-select').value);
+  if (!isNaN(idx) && voices[idx]) utt.voice = voices[idx];
+
+  // Step 2: Only AFTER TTS finishes, open the mic
+  utt.onend = () => {
+    btn.textContent = '\ud83d\udd34 Listening\u2026';
+    setVoiceInputStatus('\ud83c\udfa4 ' + question);
+    setTimeout(() => openMic(onResult, onFail), 350);
+  };
+  utt.onerror = () => {
+    setTimeout(() => openMic(onResult, onFail), 500);
+  };
+
+  synth.speak(utt);
+}
+
+function openMic(onResult, onFail) {
+  const rec = new SpeechRecognition();
+  rec.lang = 'en-IN';
+  rec.interimResults = false;
+  rec.maxAlternatives = 5;
+  rec.continuous = false;
+  let gotResult = false;
+
+  rec.onresult = (e) => {
+    gotResult = true;
+    const transcripts = Array.from(e.results[0]).map(a => a.transcript.trim().toLowerCase());
+    console.log('[PathSense Voice]', transcripts);
+    onResult(transcripts);
+  };
+
+  rec.onerror = (e) => {
+    console.warn('Mic error:', e.error);
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      const note = document.getElementById('voice-fallback-note');
+      note.style.display = 'block';
+      note.textContent = '\u26a0\ufe0f Microphone access denied \u2014 please allow mic access in your browser and try again.';
+      endVoiceSession();
+    } else {
+      onFail(e.error);
+    }
+  };
+
+  rec.onend = () => { if (!gotResult) onFail('no-speech'); };
+
+  try { rec.start(); } catch(e) { onFail('start-failed'); }
+}
+
+function parseVehicles(transcripts) {
+  // Word-to-number map (extended to 20)
+  const wordMap = {
+    'a':1,'one':1,'two':2,'three':3,'four':4,'five':5,
+    'six':6,'seven':7,'eight':8,'nine':9,'ten':10,
+    'eleven':11,'twelve':12,'thirteen':13,'fourteen':14,'fifteen':15,
+    'sixteen':16,'seventeen':17,'eighteen':18,'nineteen':19,'twenty':20
+  };
+
+  // ─ DENSITY CATEGORIES ─
+  const densityRules = [
+    {
+      patterns: ['heavy traffic','a lot of traffic','very heavy','packed','crowded','jam','gridlock',
+                 'many vehicles','many cars','loads of','tons of','so many','too many','a lot'],
+      value: 50, category: 'High', label: 'High density — using 50 vehicles'
+    },
+    {
+      patterns: ['not that many','moderate traffic','moderate','medium traffic','some traffic',
+                 'some vehicles','some cars','average traffic','fair amount','quite a few'],
+      value: 15, category: 'Medium', label: 'Medium density — using 15 vehicles'
+    },
+    {
+      patterns: ['very few','hardly any','almost none','barely any','not many','low traffic',
+                 'light traffic','empty road','quiet road','sparse','few vehicles','few cars'],
+      value: 3, category: 'Low', label: 'Low density — using 3 vehicles'
+    }
+  ];
+
+  for (const t of transcripts) {
+
+    // 1. Density category — checked FIRST as it uses multi-word phrases
+    for (const rule of densityRules) {
+      if (rule.patterns.some(p => t.includes(p))) {
+        return { value: rule.value, category: rule.category, label: rule.label };
+      }
+    }
+
+    // 2. Explicit digit anywhere in the sentence
+    const digitMatch = t.match(/\b([1-9]|1\d|20)\b/);
+    if (digitMatch) {
+      const v = parseInt(digitMatch[1]);
+      return { value: v, category: 'Exact', label: `${v} vehicle${v > 1 ? 's' : ''}` };
+    }
+
+    // 3. "X or Y" range — take lower bound
+    const rangeMatch = t.match(/\b(\w+)\s+or\s+(\w+)\b/);
+    if (rangeMatch) {
+      const a = wordMap[rangeMatch[1]], b = wordMap[rangeMatch[2]];
+      const v = a && b ? Math.min(a, b) : (a || b);
+      if (v) return { value: v, category: 'Exact', label: `about ${v} vehicle${v > 1 ? 's' : ''}` };
+    }
+
+    // 4. Hedged approximations: "around three", "about 5", "roughly two"
+    const hedgeMatch = t.match(/\b(?:around|about|approximately|roughly|maybe|nearly)\s+(\w+)\b/);
+    if (hedgeMatch) {
+      const w = hedgeMatch[1];
+      const n = parseInt(w);
+      const v = !isNaN(n) ? n : wordMap[w];
+      if (v && v >= 1 && v <= 20) return { value: v, category: 'Exact', label: `about ${v} vehicle${v > 1 ? 's' : ''}` };
+    }
+
+    // 5. Plain word-number anywhere in sentence
+    for (const [word, val] of Object.entries(wordMap)) {
+      if (new RegExp(`\\b${word}\\b`).test(t)) {
+        return { value: val, category: 'Exact', label: `${val} vehicle${val > 1 ? 's' : ''}` };
+      }
+    }
+
+    // 6. Single vague words
+    const singleVague = { 'many':5,'lot':5,'lots':5,'several':4,'multiple':3,'few':3,
+                          'couple':2,'pair':2,'handful':5,'bunch':4,'some':3,'single':1 };
+    for (const [phrase, val] of Object.entries(singleVague)) {
+      if (t.includes(phrase)) return { value: val, category: 'Medium', label: `about ${val} vehicles` };
+    }
+  }
+  return null;
+}
+
+function parseTrafficControl(transcripts) {
+  for (const t of transcripts) {
+    if (t.includes('signal')) return 'Signals';
+    if (t.includes('sign') && !t.includes('signal')) return 'Signs';
+    if (t.includes('none') || t.includes('nothing') || t.includes('no control')) return 'None';
+    if (t.includes('unknown') || t.includes('not sure') || t.includes('don')) return 'Unknown';
+  }
+  return null;
+}
+
+let voiceRetry = 0;
+
+function startVoiceSession() {
+  if (!voiceSupported) return;
+  voiceRetry = 0;
+  askVehicles();
+}
+
+function askVehicles() {
+  askAndListen(
+    'How many vehicles are involved? You can say a number, or describe it — like many, a few, or heavy traffic.',
+    (transcripts) => {
+      const result = parseVehicles(transcripts);
+      if (result) {
+        document.getElementById('f-vehicles').value = result.value;
+        setVehicleDensityBadge(result.category, result.label);
+        speak(`Got it — ${result.label}.`, true);
+        setVoiceInputStatus(`✅ ${result.label}`);
+        voiceRetry = 0;
+        setTimeout(() => askTraffic(), 1600);
+      } else if (voiceRetry < 1) {
+        voiceRetry++;
+        speak('Sorry, I did not catch that. Try saying a number, or words like many, a few, or heavy traffic.', true);
+        setVoiceInputStatus('⚠️ Didn\'t catch that — trying again…');
+        setTimeout(() => askVehicles(), 2400);
+      } else {
+        speak('Using default: moderate traffic, 15 vehicles.', true);
+        setVoiceInputStatus('⚠️ Defaulted to Medium density — 15 vehicles');
+        document.getElementById('f-vehicles').value = 15;
+        setVehicleDensityBadge('Medium', 'Medium density — 15 vehicles');
+        voiceRetry = 0;
+        setTimeout(() => askTraffic(), 1800);
+      }
+    },
+    () => {
+      speak('Microphone error. Using manual fields.', true);
+      setVoiceInputStatus('⚠️ Mic error — please fill manually');
+      endVoiceSession();
+    }
+  );
+}
+
+function setVehicleDensityBadge(category, label) {
+  const colors = { High:'#ef4444', Medium:'#f59e0b', Low:'#22c55e', Exact:'#15803d' };
+  const icons  = { High:'🔴', Medium:'🟡', Low:'🟢', Exact:'🔢' };
+  let badge = document.getElementById('vehicle-density-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'vehicle-density-badge';
+    badge.style.cssText = 'font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;display:inline-block;margin-top:4px;color:#fff;';
+    document.getElementById('f-vehicles').insertAdjacentElement('afterend', badge);
+  }
+  badge.style.background = colors[category] || '#15803d';
+  badge.textContent = `${icons[category] || ''} ${label}`;
+}
+
+function askTraffic() {
+  askAndListen(
+    'What traffic control is present? Say: Signals, Signs, None, or Unknown.',
+    (transcripts) => {
+      const v = parseTrafficControl(transcripts);
+      if (v) {
+        document.getElementById('f-traffic').value = v;
+        speak(`Got it — ${v}.`, true);
+        setVoiceInputStatus(`✅ Traffic control set to ${v}`);
+        endVoiceSession();
+        setTimeout(() => {
+          speak('All inputs ready. Analysing risk now.', true);
+          runPrediction();
+        }, 1400);
+      } else if (voiceRetry < 1) {
+        voiceRetry++;
+        speak('Please say Signals, Signs, None, or Unknown.', true);
+        setVoiceInputStatus('⚠️ Didn\'t catch that — trying again…');
+        setTimeout(() => askTraffic(), 2200);
+      } else {
+        speak('Using default: Signals.', true);
+        setVoiceInputStatus('⚠️ Defaulted to Signals');
+        document.getElementById('f-traffic').value = 'Signals';
+        endVoiceSession();
+        setTimeout(() => runPrediction(), 1400);
+      }
+    },
+    () => {
+      speak('Microphone error. Using manual fields.', true);
+      setVoiceInputStatus('⚠️ Mic error — please fill manually');
+      endVoiceSession();
+    }
+  );
+}
+
+function endVoiceSession() {
+  const btn = document.getElementById('btn-voice-input');
+  btn.classList.remove('listening');
+  btn.textContent = '🎤 Start Voice Input';
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  MAP (OPENSTREETMAP)
+// ═══════════════════════════════════════════════════════════════
+let mapInstance;
+let userMarker;
+let accuracyCircle;
+let watchId;
+window.latestPosition = null;
+
+function updateMapFallback(lat, lon, accuracy, status) {
+  const fallback = document.getElementById('map-fallback');
+  const statusEl = document.getElementById('map-fallback-status');
+  const coordsEl = document.getElementById('map-fallback-coords');
+  const linkEl = document.getElementById('map-open-link');
+  if (!fallback || !statusEl || !coordsEl || !linkEl) return;
+
+  fallback.hidden = false;
+  statusEl.textContent = status || 'Live coordinates available.';
+
+  if (typeof lat === 'number' && typeof lon === 'number') {
+    const latText = lat.toFixed(5);
+    const lonText = lon.toFixed(5);
+    const accText = typeof accuracy === 'number' ? ` | Accuracy: ${Math.round(accuracy)} m` : '';
+    coordsEl.textContent = `Lat: ${latText} | Lon: ${lonText}${accText}`;
+    linkEl.href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
+    linkEl.textContent = 'Open this location in OpenStreetMap';
+  } else {
+    coordsEl.textContent = 'Lat: -- | Lon: --';
+    linkEl.href = 'https://www.openstreetmap.org';
+    linkEl.textContent = 'Open OpenStreetMap';
+  }
+}
+
+function setMapFallbackVisible(visible) {
+  const fallback = document.getElementById('map-fallback');
+  if (!fallback) return;
+  fallback.hidden = !visible;
+}
+
+function toggleMap() {
+  const mapBody = document.getElementById('map-body');
+  const btn = document.getElementById('btn-toggle-map');
+  const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+
+  if (isExpanded) {
+    mapBody.style.display = 'none';
+    btn.setAttribute('aria-expanded', 'false');
+    btn.textContent = 'Expand Map';
+  } else {
+    mapBody.style.display = 'block';
+    btn.setAttribute('aria-expanded', 'true');
+    btn.textContent = 'Collapse Map';
+    setTimeout(() => { if (mapInstance) mapInstance.invalidateSize() }, 100);
+  }
+}
+
+function initMap() {
+  if (typeof L === 'undefined') {
+    console.warn('Leaflet failed to load.');
+    const mapMsg = document.getElementById('map-message');
+    if (mapMsg) {
+      mapMsg.style.display = 'block';
+      mapMsg.textContent = 'Map could not load right now.';
+    }
+    setMapFallbackVisible(true);
+    if ('geolocation' in navigator) {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          const acc = pos.coords.accuracy;
+          window.latestPosition = { lat, lon, accuracy: acc };
+          updateSosLocationNote();
+          updateMapFallback(lat, lon, acc, 'Live location captured without map tiles.');
+          if (mapMsg) mapMsg.style.display = 'none';
+        },
+        () => {
+          updateMapFallback(null, null, null, 'Location unavailable right now.');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
+        }
+      );
+    } else {
+      updateMapFallback(null, null, null, 'Geolocation is not supported in this browser.');
+    }
+    return;
+  }
+
+  const mapMsg = document.getElementById('map-message');
+  mapMsg.style.display = 'block';
+  setMapFallbackVisible(false);
+
+  // Default coordinate (India center fallback)
+  const defaultCoords = [20.5937, 78.9629];
+  mapInstance = L.map('map').setView(defaultCoords, 5);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(mapInstance);
+
+  if ('geolocation' in navigator) {
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const acc = pos.coords.accuracy;
+        const p = [lat, lon];
+        window.latestPosition = { lat, lon, accuracy: acc };
+        updateSosLocationNote();
+        setMapFallbackVisible(false);
+        
+        if (!userMarker) {
+          mapInstance.setView(p, 15);
+          userMarker = L.marker(p).addTo(mapInstance).bindPopup("📍 You are here").openPopup();
+          accuracyCircle = L.circle(p, { radius: acc, color: '#15803d', fillColor: '#22c55e', fillOpacity: 0.2 }).addTo(mapInstance);
+          mapMsg.style.display = 'none';
+        } else {
+          userMarker.setLatLng(p);
+          accuracyCircle.setLatLng(p);
+          accuracyCircle.setRadius(acc);
+        }
+      },
+      (err) => {
+        console.warn('Geolocation Error:', err);
+        window.latestPosition = null;
+        updateSosLocationNote();
+        updateMapFallback(null, null, null, 'Location unavailable right now.');
+        let msg = "Location access denied. Showing default map.";
+        if (err.code === err.POSITION_UNAVAILABLE) msg = "Location unavailable. Showing default map.";
+        else if (err.code === err.TIMEOUT) msg = "Location request timed out. Showing default map.";
+        mapMsg.textContent = msg;
+        setTimeout(() => mapMsg.style.display = 'none', 6000);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 0
+      }
+    );
+  } else {
+    updateMapFallback(null, null, null, 'Geolocation is not supported in this browser.');
+    mapMsg.textContent = "Geolocation not supported by browser. Showing default map.";
+    setTimeout(() => mapMsg.style.display = 'none', 6000);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+initMap();
+initAutoFill();
+setVoiceDot('active');
+updateSosLocationNote();
+mountSosCard();
+
+// Show fallback note if browser doesn't support Web Speech
+if (!voiceSupported) {
+  document.getElementById('voice-fallback-note').style.display = 'block';
+  document.getElementById('btn-voice-input').disabled = true;
+  document.getElementById('btn-voice-input').title = 'Voice input not supported. Use Chrome or Edge.';
+}
+
+// Welcome announcement for screen readers
+setTimeout(() => {
+  announceToSR(
+    'PathSense loaded. Pedestrian risk assessment with voice output and auto-fill. ' +
+    'Weather, lighting, time and day have been auto-detected. ' +
+    'Press the voice input button to speak your vehicle and traffic details, then the result will be read aloud. ' +
+    'Press R to run, Space to hear result, S to stop speech.'
+  );
+}, 900);
+</script>
+</body>
+</html>
+//top-tier hanger on-- dalo ka

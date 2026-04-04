@@ -1,0 +1,23 @@
+{
+  "feature_columns": [
+    "Day of Week",
+    "Weather Conditions",
+    "Lighting Conditions",
+    "Road Type",
+    "Road Condition",
+    "Traffic Control Presence",
+    "Speed Limit (km/h)",
+    "Number of Vehicles Involved",
+    "Time_Category"
+  ],
+  "categorical_columns": [
+    "Day of Week",
+    "Weather Conditions",
+    "Lighting Conditions",
+    "Road Type",
+    "Road Condition",
+    "Traffic Control Presence",
+    "Time_Category"
+  ],
+  "primary_model_file": "xgboost_risk.pkl"
+}
