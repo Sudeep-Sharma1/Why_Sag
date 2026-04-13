@@ -58,6 +58,7 @@
         <span class="hero-chip"><kbd>R</kbd> Run prediction</span>
         <span class="hero-chip"><kbd>Space</kbd> Read result</span>
         <span class="hero-chip"><kbd>S</kbd> Stop speech</span>
+        <span class="hero-chip"><kbd>V</kbd> Command mode</span>
       </div>
     </div>
     <div class="hero-panel" aria-label="Key benefits">
@@ -85,6 +86,10 @@
       </span>
     </div>
     <div class="voice-controls" role="group" aria-label="Voice actions">
+      <button class="btn-voice" id="btn-command-mode" onclick="startCommandMode()"
+              aria-label="Start voice command mode (V)">
+        Command Mode
+      </button>
       <button class="btn-voice" id="btn-read-result" onclick="speakLastResult()"
               aria-label="Read last result aloud (Space)" disabled>
         🔊 Read Result
@@ -202,16 +207,16 @@
 
               <!-- ZONE 3: Voice inputs -->
               <div class="voice-input-section">
-                <label class="section-label">Voice Input - Vehicles and Traffic</label>
+                <label class="section-label">Voice Risk Check</label>
                 <!-- Fallback note for unsupported browsers -->
                 <div class="voice-fallback-note" id="voice-fallback-note">
                   ⚠️ Voice input is not supported in this browser (try Chrome or Edge).
                   Please use the fields below manually.
                 </div>
                 <button type="button" class="btn-voice-input" id="btn-voice-input"
-                        aria-label="Start guided voice input for vehicles and traffic control"
+                        aria-label="Start guided voice risk check for the full scenario"
                         onclick="startVoiceSession()">
-                  🎤 Start Voice Input
+                  Start Risk Check
                 </button>
                 <div class="voice-status-chip" id="voice-input-status" aria-live="polite"></div>
                 <div class="form-grid">
@@ -466,6 +471,13 @@ let voicePitch = 1.0;
 let autoVoice  = true;
 let lastResultText = '';
 let voices = [];
+let latestWeatherValue = 'Clear';
+let latestWeatherLocation = 'your area';
+let hasWelcomedUser = false;
+let wakePhraseEnabled = false;
+let wakePhrasePaused = false;
+let wakeRecognizer = null;
+let wakeBootstrapDone = false;
 
 function loadVoices() {
   voices = synth.getVoices();
@@ -520,9 +532,86 @@ function speakPageSummary() {
     'This tool uses a trained AI model to predict the probability of a serious or fatal pedestrian accident ' +
     'based on conditions like weather, lighting, road type, speed limit, and time of day. ' +
     'Use the form to set scenario parameters, then activate Analyse Risk. ' +
-    'Keyboard shortcuts: R to run prediction, Space to hear the result, S to stop speech. ' +
+    'Keyboard shortcuts: R to run prediction, Space to hear the result, S to stop speech, and V to open command mode. ' +
     (lastResultText ? 'Latest result: ' + lastResultText : 'No prediction has been made yet.');
   speak(txt, true);
+}
+
+function speakVoiceHelp() {
+  speak(
+    'Say open command mode to wake the voice command listener after microphone access is enabled. ' +
+    'Voice commands available. Say start risk check to begin the full guided scenario. ' +
+    'Say repeat result to hear the latest prediction again. ' +
+    'Say send SOS to emergency contact to trigger your saved SOS flow. ' +
+    'Say share location to share or copy your current map link. ' +
+    'Say read summary to hear the page summary. ' +
+    'Say stop speaking to stop speech.',
+    true
+  );
+}
+
+function getTrafficEstimate() {
+  const hour = new Date().getHours();
+  if ((hour >= 7 && hour < 10) || (hour >= 17 && hour < 20)) return 'heavy';
+  if ((hour >= 10 && hour < 17) || (hour >= 20 && hour < 22)) return 'moderate';
+  return 'light';
+}
+
+function buildWelcomeMessage() {
+  const rawLocation = String(latestWeatherLocation || 'your area').replace(/^[^\w]+/, '');
+  const location = /default|fetch failed|service|invalid|inactive/i.test(rawLocation) ? 'your area' : rawLocation;
+  const weather = latestWeatherValue || document.getElementById('f-weather').value || 'clear';
+  const traffic = getTrafficEstimate();
+  return `Welcome to PathSense. Current weather near ${location} is ${weather}. Estimated traffic around your location is ${traffic}. Say open command mode after enabling the microphone to control the app by voice.`;
+}
+
+function maybeSpeakWelcome() {
+  if (hasWelcomedUser || !autoVoice) return;
+  hasWelcomedUser = true;
+  const message = buildWelcomeMessage();
+  announceToSR(message);
+  speak(message, true);
+}
+
+function getShareLocationUrl() {
+  if (!window.latestPosition) return '';
+  const { lat, lon } = window.latestPosition;
+  return `https://maps.google.com/?q=${lat},${lon}`;
+}
+
+async function shareCurrentLocation() {
+  const url = getShareLocationUrl();
+  if (!url) {
+    speak('Live location is not ready yet.', true);
+    showToast('Live location is not ready yet.');
+    return;
+  }
+
+  const text = `My current PathSense location: ${url}`;
+
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'PathSense Location', text, url });
+      speak('Your live location has been shared.', true);
+      return;
+    }
+  } catch (_) {
+    // Fall through to clipboard or new tab fallback.
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      showToast('Location link copied to clipboard.');
+      speak('Your live location link is copied to the clipboard.', true);
+      return;
+    }
+  } catch (_) {
+    // Fall through to opening the map link.
+  }
+
+  window.open(url, '_blank', 'noopener');
+  speak('Opening your current location on the map.', true);
 }
 
 function updateVoiceSetting(type, val) {
@@ -915,6 +1004,7 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); speakLastResult(); }
   if (e.key === 's' || e.key === 'S') stopSpeaking();
   if (e.key === 'r' || e.key === 'R') document.getElementById('btn-predict').click();
+  if (e.key === 'v' || e.key === 'V') startCommandMode();
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1094,6 +1184,8 @@ async function fetchWeather(lat, lon) {
   const weatherIcons = { Clear:'☀️', Cloudy:'⛅', Rainy:'🌧️', Stormy:'⚡', Foggy:'🌫️', Hazy:'🌫️' };
 
   function applyWeather(val, sub) {
+    latestWeatherValue = val;
+    latestWeatherLocation = String(sub || 'your area').replace(/^.*?\s/, '').trim() || 'your area';
     const icon = weatherIcons[val] || '🌤️';
     document.getElementById('f-weather').value = val;
     chip.classList.remove('chip-loading');
@@ -1102,6 +1194,7 @@ async function fetchWeather(lat, lon) {
     document.getElementById('proof-weather-name').textContent = val;
     document.getElementById('proof-weather-sub').textContent = sub;
     document.getElementById('proof-panel').style.display = 'grid';
+    setTimeout(() => maybeSpeakWelcome(), 800);
   }
 
   if (OWM_KEY === 'YOUR_OPENWEATHERMAP_API_KEY') {
@@ -1422,7 +1515,7 @@ function askTraffic() {
 function endVoiceSession() {
   const btn = document.getElementById('btn-voice-input');
   btn.classList.remove('listening');
-  btn.textContent = '🎤 Start Voice Input';
+  btn.textContent = 'Start Risk Check';
 }
 
 
@@ -1578,18 +1671,528 @@ function initMap() {
 // ═══════════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════════
+const VOICE_BUTTON_LABELS = {
+  'btn-voice-input': 'Start Risk Check',
+  'btn-command-mode': 'Command Mode',
+};
+
+function getVoiceButtonLabel(buttonId) {
+  return VOICE_BUTTON_LABELS[buttonId] || 'Voice';
+}
+
+function setVoiceButtonState(buttonId, text, listening = false) {
+  const btn = document.getElementById(buttonId);
+  if (!btn) return;
+  btn.classList.toggle('listening', listening);
+  btn.textContent = text;
+}
+
+function normalizeTranscript(text) {
+  return text.toLowerCase().replace(/[^\w\s+]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function hasAnyPhrase(transcripts, phrases) {
+  return transcripts.some(t => phrases.some(phrase => t.includes(phrase)));
+}
+
+function parseMappedChoice(transcripts, rules) {
+  for (const t of transcripts) {
+    for (const rule of rules) {
+      if (rule.patterns.some(pattern => t.includes(pattern))) return rule.value;
+    }
+  }
+  return null;
+}
+
+function parseSpokenNumber(transcripts, min = 0, max = 200) {
+  const numberWords = {
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11,
+    twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+    seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30,
+    forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80,
+    ninety: 90, hundred: 100
+  };
+
+  for (const t of transcripts) {
+    const digitMatch = t.match(/\b(\d{1,3})\b/);
+    if (digitMatch) {
+      const value = parseInt(digitMatch[1], 10);
+      if (value >= min && value <= max) return value;
+    }
+
+    const words = t.replace(/-/g, ' ').split(/\s+/);
+    let current = 0;
+    let found = false;
+
+    for (const word of words) {
+      if (!(word in numberWords)) continue;
+      found = true;
+      if (word === 'hundred') current = current === 0 ? 100 : current * 100;
+      else current += numberWords[word];
+    }
+
+    if (found && current >= min && current <= max) return current;
+  }
+
+  return null;
+}
+
+function setWeatherValue(value, source = 'Voice check') {
+  const weatherIcons = { Clear: 'Sun', Cloudy: 'Cloud', Rainy: 'Rain', Stormy: 'Storm', Foggy: 'Fog', Hazy: 'Haze' };
+  document.getElementById('f-weather').value = value;
+  const chip = document.getElementById('chip-weather');
+  chip.classList.remove('chip-loading');
+  chip.innerHTML = `<span class="chip-icon">${weatherIcons[value] || 'Weather'}</span> <span>Weather: <span class="chip-value">${value}</span></span>`;
+  document.getElementById('proof-weather-icon').textContent = weatherIcons[value] || 'Weather';
+  document.getElementById('proof-weather-name').textContent = value;
+  document.getElementById('proof-weather-sub').textContent = source;
+  document.getElementById('proof-panel').style.display = 'grid';
+}
+
+function setLightingValue(value) {
+  document.getElementById('f-lighting').value = value;
+  document.getElementById('chip-lighting-val').textContent = value;
+}
+
+function setTimeValue(value) {
+  document.getElementById('f-time').value = value;
+  document.getElementById('chip-time-val').textContent = value;
+}
+
+function setDayValue(value) {
+  document.getElementById('f-day').value = value;
+  document.getElementById('chip-day-val').textContent = value;
+}
+
+function parseWeather(transcripts) {
+  return parseMappedChoice(transcripts, [
+    { value: 'Stormy', patterns: ['stormy', 'storm', 'thunder', 'lightning'] },
+    { value: 'Rainy', patterns: ['rainy', 'rain', 'drizzle', 'shower'] },
+    { value: 'Foggy', patterns: ['foggy', 'fog', 'mist'] },
+    { value: 'Hazy', patterns: ['hazy', 'haze', 'smog'] },
+    { value: 'Cloudy', patterns: ['cloudy', 'cloud', 'overcast'] },
+    { value: 'Clear', patterns: ['clear', 'sunny', 'bright'] },
+  ]);
+}
+
+function parseLighting(transcripts) {
+  return parseMappedChoice(transcripts, [
+    { value: 'Daylight', patterns: ['daylight', 'day light', 'daytime'] },
+    { value: 'Dark', patterns: ['dark'] },
+    { value: 'Dawn', patterns: ['dawn', 'sunrise', 'early morning'] },
+    { value: 'Dusk', patterns: ['dusk', 'sunset', 'evening light'] },
+  ]);
+}
+
+function parseTimeCategory(transcripts) {
+  return parseMappedChoice(transcripts, [
+    { value: 'Morning', patterns: ['morning'] },
+    { value: 'Afternoon', patterns: ['afternoon'] },
+    { value: 'Evening', patterns: ['evening'] },
+    { value: 'Night', patterns: ['night'] },
+  ]);
+}
+
+function parseDayOfWeek(transcripts) {
+  return parseMappedChoice(transcripts, [
+    { value: 'Monday', patterns: ['monday'] },
+    { value: 'Tuesday', patterns: ['tuesday'] },
+    { value: 'Wednesday', patterns: ['wednesday'] },
+    { value: 'Thursday', patterns: ['thursday'] },
+    { value: 'Friday', patterns: ['friday'] },
+    { value: 'Saturday', patterns: ['saturday'] },
+    { value: 'Sunday', patterns: ['sunday'] },
+  ]);
+}
+
+function parseRoadType(transcripts) {
+  return parseMappedChoice(transcripts, [
+    { value: 'Urban Road', patterns: ['urban road', 'urban', 'city road'] },
+    { value: 'State Highway', patterns: ['state highway', 'state road'] },
+    { value: 'National Highway', patterns: ['national highway', 'highway', 'motorway'] },
+    { value: 'Rural Road', patterns: ['rural road', 'rural', 'village road'] },
+  ]);
+}
+
+function parseRoadCondition(transcripts) {
+  return parseMappedChoice(transcripts, [
+    { value: 'Under Construction', patterns: ['under construction', 'construction', 'road work', 'roadwork'] },
+    { value: 'Wet', patterns: ['wet', 'slippery'] },
+    { value: 'Icy', patterns: ['icy', 'ice'] },
+    { value: 'Dry', patterns: ['dry'] },
+  ]);
+}
+
+function parseSpeedLimit(transcripts) {
+  return parseSpokenNumber(transcripts, 0, 200);
+}
+
+function askAndListen(question, onResult, onFail, options = {}) {
+  const buttonId = options.buttonId || 'btn-voice-input';
+  const idleLabel = options.idleLabel || getVoiceButtonLabel(buttonId);
+
+  setVoiceButtonState(buttonId, 'Speaking...', true);
+  setVoiceInputStatus(question);
+
+  synth.cancel();
+  const utt = new SpeechSynthesisUtterance(question);
+  utt.rate = voiceRate;
+  utt.pitch = voicePitch;
+  const idx = parseInt(document.getElementById('voice-select').value);
+  if (!isNaN(idx) && voices[idx]) utt.voice = voices[idx];
+
+  utt.onend = () => {
+    setVoiceButtonState(buttonId, 'Listening...', true);
+    setVoiceInputStatus('Listening: ' + question);
+    setTimeout(() => openMic(onResult, onFail, { buttonId, idleLabel }), 350);
+  };
+  utt.onerror = () => {
+    setTimeout(() => openMic(onResult, onFail, { buttonId, idleLabel }), 500);
+  };
+
+  synth.speak(utt);
+}
+
+function openMic(onResult, onFail, options = {}) {
+  const buttonId = options.buttonId || 'btn-voice-input';
+  const idleLabel = options.idleLabel || getVoiceButtonLabel(buttonId);
+  const rec = new SpeechRecognition();
+  rec.lang = 'en-IN';
+  rec.interimResults = false;
+  rec.maxAlternatives = 5;
+  rec.continuous = false;
+  let gotResult = false;
+
+  rec.onresult = (e) => {
+    gotResult = true;
+    const transcripts = Array.from(e.results[0]).map(a => normalizeTranscript(a.transcript.trim()));
+    console.log('[PathSense Voice]', transcripts);
+    onResult(transcripts);
+  };
+
+  rec.onerror = (e) => {
+    console.warn('Mic error:', e.error);
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      const note = document.getElementById('voice-fallback-note');
+      note.style.display = 'block';
+      note.textContent = 'Microphone access denied. Please allow microphone access in your browser and try again.';
+      endVoiceSession(buttonId, idleLabel);
+    } else {
+      onFail(e.error);
+    }
+  };
+
+  rec.onend = () => { if (!gotResult) onFail('no-speech'); };
+
+  try { rec.start(); } catch (e) { onFail('start-failed'); }
+}
+
+const riskWizardSteps = [
+  {
+    prompt: 'What is the weather? Say clear, cloudy, rainy, stormy, foggy, or hazy.',
+    parse: parseWeather,
+    apply: value => setWeatherValue(value),
+    confirm: value => `Weather set to ${value}.`,
+    fallback: () => document.getElementById('f-weather').value,
+  },
+  {
+    prompt: 'What is the lighting condition? Say daylight, dawn, dusk, or dark.',
+    parse: parseLighting,
+    apply: value => setLightingValue(value),
+    confirm: value => `Lighting set to ${value}.`,
+    fallback: () => document.getElementById('f-lighting').value,
+  },
+  {
+    prompt: 'What time category is it? Say morning, afternoon, evening, or night.',
+    parse: parseTimeCategory,
+    apply: value => setTimeValue(value),
+    confirm: value => `Time category set to ${value}.`,
+    fallback: () => document.getElementById('f-time').value,
+  },
+  {
+    prompt: 'What day of the week is it?',
+    parse: parseDayOfWeek,
+    apply: value => setDayValue(value),
+    confirm: value => `Day set to ${value}.`,
+    fallback: () => document.getElementById('f-day').value,
+  },
+  {
+    prompt: 'What road type is this? Say urban road, state highway, national highway, or rural road.',
+    parse: parseRoadType,
+    apply: value => { document.getElementById('f-road-type').value = value; },
+    confirm: value => `Road type set to ${value}.`,
+    fallback: () => document.getElementById('f-road-type').value,
+  },
+  {
+    prompt: 'What is the road condition? Say dry, wet, icy, or under construction.',
+    parse: parseRoadCondition,
+    apply: value => { document.getElementById('f-road-cond').value = value; },
+    confirm: value => `Road condition set to ${value}.`,
+    fallback: () => document.getElementById('f-road-cond').value,
+  },
+  {
+    prompt: 'What is the speed limit in kilometres per hour?',
+    parse: parseSpeedLimit,
+    apply: value => { document.getElementById('f-speed').value = value; },
+    confirm: value => `Speed limit set to ${value} kilometres per hour.`,
+    fallback: () => parseInt(document.getElementById('f-speed').value, 10) || 40,
+  },
+  {
+    prompt: 'How many vehicles are involved? You can say a number, or describe it like many, a few, or heavy traffic.',
+    parse: parseVehicles,
+    apply: result => {
+      document.getElementById('f-vehicles').value = result.value;
+      setVehicleDensityBadge(result.category, result.label);
+    },
+    confirm: result => `${result.label}.`,
+    fallback: () => ({ value: 1, category: 'Exact', label: '1 vehicle' }),
+  },
+  {
+    prompt: 'What traffic control is present? Say signals, signs, none, or unknown.',
+    parse: parseTrafficControl,
+    apply: value => { document.getElementById('f-traffic').value = value; },
+    confirm: value => `Traffic control set to ${value}.`,
+    fallback: () => document.getElementById('f-traffic').value,
+  },
+];
+
+function runRiskWizardStep(index) {
+  const step = riskWizardSteps[index];
+  if (!step) {
+    endVoiceSession('btn-voice-input');
+    setVoiceInputStatus('All inputs captured. Analysing risk now.');
+    wakePhrasePaused = false;
+    listenForWakePhrase();
+    setTimeout(() => {
+      speak('All inputs are ready. Analysing risk now.', true);
+      runPrediction();
+    }, 400);
+    return;
+  }
+
+  askAndListen(
+    step.prompt,
+    (transcripts) => {
+      const parsed = step.parse(transcripts);
+      if (parsed !== null && parsed !== undefined) {
+        step.apply(parsed);
+        voiceRetry = 0;
+        const confirmation = step.confirm(parsed);
+        setVoiceInputStatus('OK: ' + confirmation);
+        speak(confirmation, true);
+        setTimeout(() => runRiskWizardStep(index + 1), 900);
+        return;
+      }
+
+      if (voiceRetry < 1) {
+        voiceRetry++;
+        setVoiceInputStatus('I did not catch that. Trying again.');
+        speak('I did not catch that. Let us try that step again.', true);
+        setTimeout(() => runRiskWizardStep(index), 1400);
+        return;
+      }
+
+      const fallbackValue = step.fallback();
+      step.apply(fallbackValue);
+      voiceRetry = 0;
+      const confirmation = step.confirm(fallbackValue);
+      setVoiceInputStatus('Using current value: ' + confirmation);
+      speak(`Using the current value. ${confirmation}`, true);
+      setTimeout(() => runRiskWizardStep(index + 1), 900);
+    },
+    () => {
+      speak('Microphone error. Please complete the form manually.', true);
+      setVoiceInputStatus('Microphone error. Please fill the form manually.');
+      endVoiceSession('btn-voice-input');
+      wakePhrasePaused = false;
+      listenForWakePhrase();
+    },
+    { buttonId: 'btn-voice-input' }
+  );
+}
+
+function startVoiceSession() {
+  if (!voiceSupported) {
+    setVoiceInputStatus('Voice input is not supported in this browser.');
+    return;
+  }
+  pauseWakePhraseListener();
+  voiceRetry = 0;
+  speak('Starting the full risk check.', true);
+  setTimeout(() => runRiskWizardStep(0), 350);
+}
+
+function recognizeVoiceCommand(transcripts) {
+  if (hasAnyPhrase(transcripts, ['command mode', 'start command mode', 'open command mode'])) return 'command_mode';
+  if (hasAnyPhrase(transcripts, ['start risk check', 'risk check', 'start check', 'start voice check'])) return 'start_risk_check';
+  if (hasAnyPhrase(transcripts, ['repeat result', 'read result', 'repeat the result'])) return 'repeat_result';
+  if (hasAnyPhrase(transcripts, ['send sos', 'send s o s', 'emergency contact'])) return 'send_sos';
+  if (hasAnyPhrase(transcripts, ['share location', 'share my location', 'send location'])) return 'share_location';
+  if (hasAnyPhrase(transcripts, ['read summary', 'summary'])) return 'read_summary';
+  if (hasAnyPhrase(transcripts, ['voice help', 'help', 'what can i say'])) return 'voice_help';
+  if (hasAnyPhrase(transcripts, ['stop speaking', 'stop voice', 'stop'])) return 'stop_speaking';
+  return null;
+}
+
+function handleVoiceCommand(command) {
+  switch (command) {
+    case 'command_mode':
+      setVoiceStatus('Command mode active');
+      startCommandMode();
+      break;
+    case 'start_risk_check':
+      setVoiceStatus('Starting guided risk check');
+      startVoiceSession();
+      break;
+    case 'repeat_result':
+      speakLastResult();
+      break;
+    case 'send_sos':
+      setSosStatus('Voice command recognized. Sending SOS now.', 'info');
+      speak('Sending SOS to your emergency contact.', true);
+      sendSOS();
+      break;
+    case 'share_location':
+      shareCurrentLocation();
+      break;
+    case 'read_summary':
+      speakPageSummary();
+      break;
+    case 'voice_help':
+      speakVoiceHelp();
+      break;
+    case 'stop_speaking':
+      stopSpeaking();
+      break;
+    default:
+      speak('I did not recognize that command. Say voice help to hear the available commands.', true);
+      setVoiceStatus('Voice command not recognized');
+  }
+}
+
+function pauseWakePhraseListener() {
+  wakePhrasePaused = true;
+  if (wakeRecognizer) {
+    try { wakeRecognizer.stop(); } catch (_) {}
+  }
+}
+
+function listenForWakePhrase() {
+  if (!voiceSupported || !wakePhraseEnabled || wakePhrasePaused) return;
+
+  wakeRecognizer = new SpeechRecognition();
+  wakeRecognizer.lang = 'en-IN';
+  wakeRecognizer.interimResults = false;
+  wakeRecognizer.maxAlternatives = 3;
+  wakeRecognizer.continuous = true;
+
+  wakeRecognizer.onresult = (e) => {
+    const transcripts = Array.from(e.results)
+      .slice(e.resultIndex)
+      .flatMap(result => Array.from(result).map(alt => normalizeTranscript(alt.transcript.trim())));
+
+    if (hasAnyPhrase(transcripts, ['open command mode', 'start command mode', 'command mode'])) {
+      pauseWakePhraseListener();
+      setVoiceStatus('Wake phrase detected');
+      speak('Opening command mode.', true);
+      setTimeout(() => startCommandMode(), 500);
+    }
+  };
+
+  wakeRecognizer.onerror = () => {
+    if (!wakePhraseEnabled) return;
+    setVoiceStatus('Wake phrase listener unavailable');
+  };
+
+  wakeRecognizer.onend = () => {
+    wakeRecognizer = null;
+    if (wakePhraseEnabled && !wakePhrasePaused) {
+      setTimeout(() => listenForWakePhrase(), 900);
+    }
+  };
+
+  try {
+    wakeRecognizer.start();
+    setVoiceStatus('Wake phrase ready: say open command mode');
+  } catch (_) {
+    wakeRecognizer = null;
+  }
+}
+
+function enableWakePhraseListener() {
+  if (!voiceSupported || wakePhraseEnabled) return;
+  wakePhraseEnabled = true;
+  wakePhrasePaused = false;
+  listenForWakePhrase();
+}
+
+function bootstrapWakePhraseListener() {
+  if (wakeBootstrapDone || !voiceSupported) return;
+  wakeBootstrapDone = true;
+
+  const activate = () => enableWakePhraseListener();
+  window.addEventListener('pointerdown', activate, { once: true });
+  window.addEventListener('keydown', activate, { once: true });
+}
+
+function startCommandMode() {
+  if (!voiceSupported) {
+    setVoiceStatus('Voice commands are not supported in this browser.');
+    return;
+  }
+
+  pauseWakePhraseListener();
+  askAndListen(
+    'Command mode active. Say start risk check, repeat result, send SOS, share location, read summary, voice help, or stop speaking.',
+    (transcripts) => {
+      const command = recognizeVoiceCommand(transcripts);
+      endVoiceSession('btn-command-mode');
+      if (!command) {
+        setVoiceStatus('Voice command not recognized');
+        speak('I did not recognize that command. Say voice help to hear the available commands.', true);
+        wakePhrasePaused = false;
+        listenForWakePhrase();
+        return;
+      }
+      handleVoiceCommand(command);
+      if (command !== 'start_risk_check' && command !== 'command_mode') {
+        wakePhrasePaused = false;
+        listenForWakePhrase();
+      }
+    },
+    () => {
+      endVoiceSession('btn-command-mode');
+      setVoiceStatus('Command mode microphone error');
+      speak('Microphone error while listening for a voice command.', true);
+      wakePhrasePaused = false;
+      listenForWakePhrase();
+    },
+    { buttonId: 'btn-command-mode' }
+  );
+}
+
+function endVoiceSession(buttonId = 'btn-voice-input', idleLabel = getVoiceButtonLabel(buttonId)) {
+  setVoiceButtonState(buttonId, idleLabel, false);
+}
+
 initMap();
 initAutoFill();
 setVoiceDot('active');
 updateSosLocationNote();
 mountSosCard();
 renderSavedSosContacts();
+setVoiceButtonState('btn-voice-input', getVoiceButtonLabel('btn-voice-input'));
+setVoiceButtonState('btn-command-mode', getVoiceButtonLabel('btn-command-mode'));
+bootstrapWakePhraseListener();
 
 // Show fallback note if browser doesn't support Web Speech
 if (!voiceSupported) {
   document.getElementById('voice-fallback-note').style.display = 'block';
   document.getElementById('btn-voice-input').disabled = true;
   document.getElementById('btn-voice-input').title = 'Voice input not supported. Use Chrome or Edge.';
+  document.getElementById('btn-command-mode').disabled = true;
+  document.getElementById('btn-command-mode').title = 'Voice commands not supported. Use Chrome or Edge.';
 }
 
 // Welcome announcement for screen readers
@@ -1597,12 +2200,12 @@ setTimeout(() => {
   announceToSR(
     'PathSense loaded. Pedestrian risk assessment with voice output and auto-fill. ' +
     'Weather, lighting, time and day have been auto-detected. ' +
-    'Press the voice input button to speak your vehicle and traffic details, then the result will be read aloud. ' +
-    'Press R to run, Space to hear result, S to stop speech.'
+    'Press Start Risk Check for the full guided voice wizard, or press V for command mode. ' +
+    'Press R to run, Space to hear result, S to stop speech, and V for command mode.'
   );
 }, 900);
+
+setTimeout(() => maybeSpeakWelcome(), 2500);
 </script>
 </body>
 </html>
-//top-tier hanger on-- dalo ka
-//MY_PDS
