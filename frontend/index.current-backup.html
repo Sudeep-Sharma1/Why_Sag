@@ -12,7 +12,7 @@
 <!-- Add this to link your new CSS file -->
   <link rel="stylesheet" href="index.css" />
 
-</head>    
+</head>
 <body>
 
 <!-- Skip to main content (keyboard/screen reader) -->
@@ -243,31 +243,10 @@
  ------------------------------------------------------------------------------------------------------------------------------------------
  -->
             <div class="auto-panel" id="sos-panel" aria-labelledby="sos-heading" style="margin-top:18px;">
-              <div class="sos-banner" role="note">
-                <strong>Emergency Mode</strong>
-                <!-- <span>Use one action to send SOS to your saved emergency contacts.</span> -->
-              </div>
-              <!-- <p class="sos-intro">
-                Set up your emergency contacts once, then use one quick SOS action later.
-              </p> -->
+              <p class="sos-intro">
+                Send a help message to trusted contacts with full international numbers. You can also include your live location.
+              </p>
               <div class="auto-panel-title" id="sos-heading">Emergency SOS</div>
-              <div class="sos-ready-strip" aria-live="polite">
-                <div class="sos-ready-item">
-                  <span class="sos-ready-label">Contacts</span>
-                  <strong id="sos-ready-count">0 ready</strong>
-                </div>
-                <div class="sos-ready-item">
-                  <span class="sos-ready-label">Location</span>
-                  <strong id="sos-location-summary">Waiting</strong>
-                </div>
-              </div>
-              <button type="button" class="sos-secondary-btn" id="btn-sos-settings-toggle" onclick="toggleSosSettings()" aria-expanded="false">
-                 SOS Settings
-              </button>
-              <div id="sos-settings-panel" hidden>
-              <div class="sos-settings-note field-hint">
-                Twilio trial accounts can send only to verified numbers.
-              </div>
               <div class="form-grid">
                 <div class="field full">
                   <label for="f-sos-phones">Emergency contact numbers</label>
@@ -277,18 +256,10 @@
                          autocomplete="tel"
                          pattern="^\+(?:[1-9]\d{7,14})(?:\s*,\s*\+(?:[1-9]\d{7,14}))*$"
                          aria-describedby="sos-phones-hint sos-phone-error" />
-                  <!-- <span id="sos-phones-hint" class="field-hint">
-                    Add one or more full international numbers once, then reuse them for future SOS alerts.
-                  </span> -->
+                  <span id="sos-phones-hint" class="field-hint">
+                    Enter one or more full international numbers separated by commas.
+                  </span>
                   <div id="sos-phone-error" class="field-error" role="alert" aria-live="assertive"></div>
-                  <div class="sos-contact-actions">
-                    <button type="button" class="sos-secondary-btn" id="btn-save-sos-contacts" onclick="saveSosContacts()">
-                      Save Emergency Contacts
-                    </button>
-                    <button type="button" class="sos-secondary-btn" id="btn-clear-sos-input" onclick="clearSosInput()">
-                      Clear Entry
-                    </button>
-                  </div>
                 </div>
                 <div class="field full">
                   <label for="f-sos-msg">SOS message</label>
@@ -299,26 +270,6 @@
                   </span>
                 </div>
               </div>
-              <div class="saved-contacts-panel" aria-labelledby="saved-contacts-heading">
-                <div class="saved-contacts-head">
-                  <div class="auto-panel-title" id="saved-contacts-heading">Saved Emergency Contacts</div>
-                  <span id="saved-contacts-count" class="saved-contacts-count">0 saved</span>
-                </div>
-                <div class="saved-contacts-subtitle">
-                  Quick-send uses these saved contacts when the number field is left empty.
-                </div>
-                <div class="saved-contacts-control">
-                  <select id="sos-saved-select" aria-label="Choose a saved emergency contact">
-                    <option value="">All saved contacts</option>
-                  </select>
-                  <button type="button" class="sos-secondary-btn" id="btn-remove-sos-contact" onclick="removeSelectedSosContact()">
-                    Remove Selected
-                  </button>
-                </div>
-                <div id="sos-saved-empty" class="field-hint">
-                  No emergency contacts saved yet. Add numbers above and choose Save Emergency Contacts.
-                </div>
-              </div>
               <label class="sos-toggle">
                 <input type="checkbox" id="f-sos-location" checked />
                 <span>Include my live location in the SOS message</span>
@@ -326,18 +277,10 @@
               <div id="sos-location-note" class="field-hint">
                 Waiting for live location. If unavailable, the message will be sent without it.
               </div>
-              </div>
-              <button type="button" class="btn-voice stop sos-primary-btn" id="btn-sos"
+              <button type="button" class="btn-voice stop" id="btn-sos"
                       onclick="sendSOS()">
-                 Send SOS Now
+                 Send SOS
               </button>
-              <button type="button" class="sos-secondary-btn sos-voice-btn" id="btn-sos-voice"
-                      onclick="startSosVoiceCommand()">
-                Voice SOS Command
-              </button>
-              <div id="sos-voice-hint" class="field-hint">
-                Say "send SOS to emergency contact" to trigger the saved SOS flow by voice.
-              </div>
               <div id="sos-status" class="sos-status" role="status" aria-live="polite"></div>
             </div>
           </div>
@@ -546,115 +489,7 @@ function normalizePhoneNumbers(value) {
 }
 
 function isValidE164PhoneNumber(value) {
-  return !getPhoneValidationError(value);
-}
-
-function getPhoneValidationError(value) {
-  if (!value) return 'Enter a phone number.';
-  if (!value.startsWith('+')) {
-    return 'Use the full international format starting with +.';
-  }
-  if (!/^\+[1-9]\d+$/.test(value)) {
-    return 'Use only digits after the + sign.';
-  }
-  const digits = value.slice(1);
-  if (digits.length < 10) {
-    return 'This number looks incomplete. Enter the full international number, including country code and the full local mobile number.';
-  }
-  if (digits.length > 15) {
-    return 'This number is too long to be a valid international SMS number.';
-  }
-  return '';
-}
-
-const SOS_CONTACTS_KEY = 'pathsense_saved_sos_contacts';
-
-function getSavedSosContacts() {
-  try {
-    const raw = localStorage.getItem(SOS_CONTACTS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter(isValidE164PhoneNumber) : [];
-  } catch (_) {
-    return [];
-  }
-}
-
-function writeSavedSosContacts(contacts) {
-  localStorage.setItem(SOS_CONTACTS_KEY, JSON.stringify(contacts));
-}
-
-function renderSavedSosContacts() {
-  const selectEl = document.getElementById('sos-saved-select');
-  const emptyEl = document.getElementById('sos-saved-empty');
-  const countEl = document.getElementById('saved-contacts-count');
-  const removeBtn = document.getElementById('btn-remove-sos-contact');
-  const readyCountEl = document.getElementById('sos-ready-count');
-  if (!selectEl || !emptyEl || !countEl || !removeBtn) return;
-
-  const contacts = getSavedSosContacts();
-  countEl.textContent = `${contacts.length} saved`;
-  if (readyCountEl) readyCountEl.textContent = `${contacts.length} ready`;
-  emptyEl.style.display = contacts.length ? 'none' : 'block';
-  selectEl.innerHTML = '<option value="">All saved contacts</option>' +
-    contacts.map((contact) => `<option value="${contact}">${contact}</option>`).join('');
-  selectEl.disabled = !contacts.length;
-  removeBtn.disabled = !contacts.length;
-}
-
-function clearSosInput() {
-  document.getElementById('f-sos-phones').value = '';
-  setSosPhoneError('');
-}
-
-function saveSosContacts() {
-  const phonesInput = document.getElementById('f-sos-phones');
-  const phoneText = phonesInput.value.trim();
-  const recipients = normalizePhoneNumbers(phoneText);
-  const invalidRecipients = recipients
-    .map(num => ({ number: num, reason: getPhoneValidationError(num) }))
-    .filter(item => item.reason);
-
-  setSosPhoneError('');
-  setSosStatus('');
-
-  if (!recipients.length || invalidRecipients.length) {
-    const invalidText = invalidRecipients.length
-      ? ` Invalid: ${invalidRecipients.map(item => `${item.number} (${item.reason})`).join(', ')}.`
-      : '';
-    setSosPhoneError(`Use full international numbers like +1234567890 before saving.${invalidText}`);
-    phonesInput.focus();
-    return;
-  }
-
-  const merged = Array.from(new Set([...getSavedSosContacts(), ...recipients]));
-  writeSavedSosContacts(merged);
-  renderSavedSosContacts();
-  clearSosInput();
-  setSosStatus(`Saved ${recipients.length} emergency contact(s).`, 'success');
-  announceToSR('Emergency contacts saved.');
-}
-
-function removeSosContact(contact) {
-  const nextContacts = getSavedSosContacts().filter(item => item !== contact);
-  writeSavedSosContacts(nextContacts);
-  renderSavedSosContacts();
-  setSosStatus(`Removed ${contact} from saved emergency contacts.`, 'info');
-}
-
-function removeSelectedSosContact() {
-  const selectEl = document.getElementById('sos-saved-select');
-  const selected = selectEl?.value;
-  if (!selected) {
-    setSosStatus('Choose a saved contact from the dropdown to remove it.', 'info');
-    return;
-  }
-  removeSosContact(selected);
-}
-
-function getSelectedSosRecipients() {
-  const selectEl = document.getElementById('sos-saved-select');
-  const selected = selectEl?.value?.trim();
-  return selected ? [selected] : getSavedSosContacts();
+  return /^\+[1-9]\d{7,14}$/.test(value);
 }
 
 function setSosPhoneError(message = '') {
@@ -674,37 +509,8 @@ function setSosStatus(message = '', tone = '') {
 
 function setSosSending(isSending) {
   const btn = document.getElementById('btn-sos');
-  const voiceBtn = document.getElementById('btn-sos-voice');
   btn.disabled = isSending;
-  if (voiceBtn) voiceBtn.disabled = isSending;
   btn.textContent = isSending ? 'Sending SOS...' : '🆘 Send SOS';
-  if (!isSending) btn.textContent = 'Send SOS Now';
-}
-
-function prettifyTwilioError(message) {
-  if (!message) return 'Unknown SOS error.';
-  const cleaned = message.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '').replace(/\s+/g, ' ').trim();
-  if (cleaned.includes('Failed to fetch') || cleaned.includes('NetworkError')) {
-    return `PathSense API is not reachable at ${API}. Start the backend server, then try SOS again.`;
-  }
-  if (cleaned.includes('unverified') && cleaned.includes('Trial accounts')) {
-    return 'This contact is not verified in your Twilio trial account. Verify the number in Twilio or upgrade the account.';
-  }
-  if (cleaned.includes("'To' and 'From' number cannot be the same")) {
-    return 'The selected contact matches your Twilio sender number. Choose a different emergency contact.';
-  }
-  if (cleaned.includes('21659') || cleaned.includes('is not a Twilio phone number')) {
-    return 'Your Twilio sender number is invalid for SMS. Replace TWILIO_FROM_NUMBER with a real Twilio SMS-capable number.';
-  }
-  return cleaned;
-}
-
-function buildSosConfirmationMessage(recipients) {
-  const contactCount = recipients.length;
-  const locationText = (document.getElementById('f-sos-location')?.checked && window.latestPosition)
-    ? 'with your current location.'
-    : 'without live location.';
-  return `Sending SOS to ${contactCount} saved contact${contactCount > 1 ? 's' : ''} ${locationText}`;
 }
 
 function getLocationSmsSuffix() {
@@ -716,27 +522,13 @@ function getLocationSmsSuffix() {
 
 function updateSosLocationNote() {
   const noteEl = document.getElementById('sos-location-note');
-  const summaryEl = document.getElementById('sos-location-summary');
   if (!noteEl) return;
   if (window.latestPosition) {
     const { lat, lon } = window.latestPosition;
     noteEl.textContent = `Live location ready: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-    if (summaryEl) summaryEl.textContent = 'Ready';
   } else {
     noteEl.textContent = 'Waiting for live location. If unavailable, the message will be sent without it.';
-    if (summaryEl) summaryEl.textContent = 'Waiting';
   }
-}
-
-function toggleSosSettings() {
-  const panel = document.getElementById('sos-settings-panel');
-  const btn = document.getElementById('btn-sos-settings-toggle');
-  if (!panel || !btn) return;
-  const willOpen = panel.hasAttribute('hidden');
-  if (willOpen) panel.removeAttribute('hidden');
-  else panel.setAttribute('hidden', '');
-  btn.setAttribute('aria-expanded', String(willOpen));
-  btn.textContent = willOpen ? 'Hide SOS Settings' : 'Manage SOS Settings';
 }
 
 function mountSosCard() {
@@ -745,33 +537,6 @@ function mountSosCard() {
   if (!panel || !slot) return;
   slot.appendChild(panel);
   panel.style.marginTop = '0';
-}
-
-function startSosVoiceCommand() {
-  if (!voiceSupported) {
-    setSosStatus('Voice commands are not supported in this browser. Use Chrome or Edge.', 'error');
-    return;
-  }
-
-  setSosStatus('Listening for SOS voice command...', 'info');
-  askAndListen(
-    'Say send SOS to emergency contact.',
-    (transcripts) => {
-      const heard = transcripts.join(' ');
-      const wantsSos = transcripts.some(t => t.includes('send sos') || t.includes('send s o s') || t.includes('emergency contact'));
-      if (!wantsSos) {
-        setSosStatus(`Voice command not recognized: "${heard}". Try saying send SOS to emergency contact.`, 'error');
-        speak('I did not catch the SOS command. Please say send SOS to emergency contact.', true);
-        return;
-      }
-      setSosStatus('Voice command recognized. Sending SOS now.', 'info');
-      speak('Sending SOS to your emergency contact.', true);
-      sendSOS();
-    },
-    () => {
-      setSosStatus('Microphone error while listening for the SOS command.', 'error');
-    }
-  );
 }
 
 async function readApiError(res) {
@@ -806,20 +571,18 @@ async function sendSOS() {
   setSosPhoneError('');
   setSosStatus('');
 
-  const recipients = phoneText ? normalizePhoneNumbers(phoneText) : getSelectedSosRecipients();
-  const invalidRecipients = recipients
-    .map(num => ({ number: num, reason: getPhoneValidationError(num) }))
-    .filter(item => item.reason);
-
-  if (!recipients.length) {
-    setSosPhoneError('Save at least one emergency contact or enter a number before sending SOS.');
+  if (!phoneText) {
+    setSosPhoneError('Enter at least one emergency contact number.');
     phonesInput.focus();
     return;
   }
 
+  const recipients = normalizePhoneNumbers(phoneText);
+  const invalidRecipients = recipients.filter(num => !isValidE164PhoneNumber(num));
+
   if (!recipients.length || invalidRecipients.length) {
     const invalidText = invalidRecipients.length
-      ? ` Invalid: ${invalidRecipients.map(item => `${item.number} (${item.reason})`).join(', ')}.`
+      ? ` Invalid: ${invalidRecipients.join(', ')}.`
       : '';
     setSosPhoneError(`Use full international numbers like +1234567890.${invalidText}`);
     phonesInput.focus();
@@ -827,11 +590,9 @@ async function sendSOS() {
   }
 
   const message = `${messageBase}${getLocationSmsSuffix()}`;
-  const spokenConfirmation = buildSosConfirmationMessage(recipients);
   announceToSR('Sending SOS request to the server.');
-  speak(spokenConfirmation, true);
   setSosSending(true);
-  setSosStatus(`Sending SOS via Twilio to ${recipients.length} contact(s)...`, 'info');
+  setSosStatus('Sending SOS via Twilio...', 'info');
   const payload = { phone_numbers: recipients, message };
 
   try {
@@ -850,14 +611,12 @@ async function sendSOS() {
     showToast(`SOS sent to ${result.sent} recipient(s).`);
     announceToSR('SOS message sent successfully.');
     setSosStatus(`SOS sent to ${result.sent} recipient(s).`, 'success');
-    speak('SOS sent successfully.', true);
   } catch (error) {
     console.error('SOS send failed:', error);
-    const messageText = prettifyTwilioError(error?.message || 'Unknown SOS error.');
+    const messageText = error?.message || 'Unknown SOS error.';
     showToast(`SOS send failed: ${messageText}. Opening SMS app as fallback.`);
     announceToSR(`SOS send failed. ${messageText}. Falling back to SMS composer.`);
-    setSosStatus(`SOS send failed. ${messageText} Opening your SMS app instead.`, 'error');
-    speak('SOS failed. Opening your SMS app.', true);
+    setSosStatus(`Twilio send failed. ${messageText} Opening your SMS app instead.`, 'error');
     const smsUrl = `sms:${recipients.join(',')}?body=${encodeURIComponent(message)}`;
     window.location.href = smsUrl;
   } finally {
@@ -982,19 +741,6 @@ async function runPrediction() {
 function buildSpokenResult(data, payload) {
   const pct   = Math.round(data.probability * 100);
   const level = data.risk_level.replace('VERY_HIGH', 'very high').replace('_', ' ').toLowerCase();
-  const meaning = data.risk_level === 'VERY_HIGH'
-    ? 'This means the current situation may be dangerous.'
-    : data.risk_level === 'MODERATE'
-      ? 'This means you should continue with caution.'
-      : 'This means the current situation appears comparatively safer.';
-  const nextStep = data.risk_level === 'VERY_HIGH'
-    ? 'What to do next: stop if possible, recheck your surroundings, and send SOS if you need help.'
-    : data.risk_level === 'MODERATE'
-      ? 'What to do next: continue carefully and stay alert to vehicles and crossings.'
-      : 'What to do next: continue carefully and keep monitoring your surroundings.';
-  const sosPrompt = data.risk_level === 'VERY_HIGH'
-    ? 'Very high risk detected. Say send SOS or press the SOS button.'
-    : '';
   return [
     'Risk assessment complete.',
     `Conditions: ${payload.weather} weather, ${payload.lighting} lighting, ` +
@@ -1004,10 +750,7 @@ function buildSpokenResult(data, payload) {
     `${payload.num_vehicles} vehicle${payload.num_vehicles > 1 ? 's' : ''} involved, ` +
     `traffic control: ${payload.traffic_control}.`,
     `Result: ${level} risk. Probability of serious or fatal accident is ${pct} percent.`,
-    meaning,
     data.message,
-    nextStep,
-    sosPrompt,
   ].join(' ');
 }
 
@@ -1137,7 +880,51 @@ function initAutoFill() {
   }
 }
 
+// async function fetchWeather(lat, lon) {
+//   const chip = document.getElementById('chip-weather');
+//   const weatherIcons = { Clear:'☀️', Cloudy:'⛅', Rainy:'🌧️', Stormy:'⚡', Foggy:'🌫️', Hazy:'🌫️' };
 
+//   function applyWeather(val, sub) {
+//     const icon = weatherIcons[val] || '🌤️';
+//     document.getElementById('f-weather').value = val;
+//     chip.classList.remove('chip-loading');
+//     chip.innerHTML = `<span class="chip-icon">${icon}</span> <span>Weather: <span class="chip-value">${val}</span></span>`;
+//     document.getElementById('proof-weather-icon').textContent = icon;
+//     document.getElementById('proof-weather-name').textContent = val;
+//     document.getElementById('proof-weather-sub').textContent = sub;
+//     document.getElementById('proof-panel').style.display = 'grid';
+//   }
+
+//   if (OWM_KEY === 'YOUR_OPENWEATHERMAP_API_KEY') {
+//     applyWeather('Clear', 'No API key - using default');
+//     return;
+//   }
+
+//   try {
+//     const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OWM_KEY}`);
+//     if (!res.ok) throw new Error('bad response');
+
+//     const d = await res.json();
+//     const desc = d.weather[0].main;
+//     const map = {
+//       Clear: 'Clear',
+//       Clouds: 'Cloudy',
+//       Rain: 'Rainy',
+//       Drizzle: 'Rainy',
+//       Thunderstorm: 'Stormy',
+//       Fog: 'Foggy',
+//       Haze: 'Hazy',
+//       Mist: 'Foggy',
+//       Snow: 'Hazy'
+//     };
+
+//     const val = map[desc] || 'Clear';
+//     const loc = d.name ? `📍 ${d.name}` : 'Live location';
+//     applyWeather(val, loc);
+//   } catch (e) {
+//     applyWeather('Clear', 'Fetch failed - using default');
+//   }
+// }
 
 function initAutoFill() {
   autoFillTimeFields();
@@ -1583,7 +1370,6 @@ initAutoFill();
 setVoiceDot('active');
 updateSosLocationNote();
 mountSosCard();
-renderSavedSosContacts();
 
 // Show fallback note if browser doesn't support Web Speech
 if (!voiceSupported) {
@@ -1605,4 +1391,5 @@ setTimeout(() => {
 </body>
 </html>
 //top-tier hanger on-- dalo ka
-//MY_PDS
+
+<!-- checking git hub -->

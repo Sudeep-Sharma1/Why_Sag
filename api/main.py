@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -19,7 +20,13 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 ML_DIR = ROOT / "ml"
 ARTIFACTS = ML_DIR / "artifacts"
-load_dotenv(ROOT / ".env")
+env_path = ROOT / ".env"
+env_example_path = ROOT / ".env.example"
+
+load_dotenv(env_path)
+if not env_path.exists() and env_example_path.exists():
+    # Allow local development to work when credentials were added only to the template file.
+    load_dotenv(env_example_path, override=False)
 
 import sys
 sys.path.insert(0, str(ML_DIR))
@@ -74,6 +81,32 @@ def _mask_phone(number: str) -> str:
     if len(number) <= 6:
         return number
     return f"{number[:4]}{'X' * max(len(number) - 8, 0)}{number[-4:]}"
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
+
+def _clean_error_text(message: str) -> str:
+    return " ".join(ANSI_ESCAPE_RE.sub("", message).split())
+
+
+def _friendly_twilio_error(exc: Exception, from_number: str, to_number: str) -> str:
+    message = _clean_error_text(str(exc))
+    lowered = message.lower()
+
+    if "21659" in message or "is not a twilio phone number" in lowered:
+        return (
+            "Your Twilio sender number is invalid for SMS. Update "
+            f"TWILIO_FROM_NUMBER from {_mask_phone(from_number)} to a real Twilio SMS-capable number."
+        )
+    if "unverified" in lowered and "trial" in lowered:
+        return (
+            f"The destination number {_mask_phone(to_number)} is not verified in your Twilio trial account."
+        )
+    if "'to' and 'from' number cannot be the same" in lowered:
+        return "The recipient number cannot be the same as your Twilio sender number."
+    return message
+
 
 def _map_request(req: PredictRequest) -> dict:
     return {
@@ -173,7 +206,10 @@ def send_sos(req: SOSRequest):
         except Exception as exc:
             raise HTTPException(
                 status_code=502,
-                detail=f"Failed to send SMS to {to_number}: {exc}",
+                detail=(
+                    f"Failed to send SMS to {to_number}: "
+                    f"{_friendly_twilio_error(exc, from_number, to_number)}"
+                ),
             ) from exc
         results.append({
             "to": to_number,

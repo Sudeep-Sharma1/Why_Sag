@@ -792,6 +792,142 @@ body.hc textarea {
   line-height: 1.6;
 }
 
+.sos-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(255, 255, 255, 0.92));
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  border-radius: 16px;
+}
+
+.sos-banner strong {
+  color: #7f1d1d;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.sos-ready-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.sos-ready-item,
+.saved-contacts-panel {
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(21, 128, 61, 0.14);
+  border-radius: 16px;
+}
+
+.sos-ready-label,
+.saved-contacts-subtitle {
+  display: block;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.sos-ready-item strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.sos-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 10px 14px;
+  color: var(--text);
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid rgba(21, 128, 61, 0.18);
+  border-radius: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.sos-secondary-btn:hover,
+.sos-secondary-btn:focus-visible {
+  background: rgba(21, 128, 61, 0.08);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+#btn-sos-settings-toggle {
+  margin-bottom: 14px;
+}
+
+#sos-settings-panel {
+  margin-bottom: 14px;
+  padding: 16px;
+  background: rgba(21, 128, 61, 0.04);
+  border: 1px solid rgba(21, 128, 61, 0.12);
+  border-radius: 16px;
+}
+
+.sos-settings-note {
+  margin-bottom: 12px;
+}
+
+.sos-contact-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.saved-contacts-panel {
+  margin-top: 14px;
+}
+
+.saved-contacts-head,
+.saved-contacts-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.saved-contacts-head {
+  margin-bottom: 10px;
+}
+
+.saved-contacts-count {
+  padding: 6px 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.saved-contacts-subtitle {
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+#sos-saved-select {
+  flex: 1;
+  min-width: 220px;
+}
+
 .sos-toggle {
   display: flex;
   align-items: center;
@@ -863,6 +999,19 @@ body.hc textarea {
   width: 100%;
   min-height: 48px;
   margin-top: 8px;
+}
+
+.sos-primary-btn {
+  margin-top: 16px;
+}
+
+.sos-voice-btn {
+  width: 100%;
+  margin-top: 10px;
+}
+
+#sos-voice-hint {
+  margin-top: 10px;
 }
 
 #btn-sos:disabled {
@@ -1600,6 +1749,21 @@ footer {
   .form-grid,
   .proof-panel {
     grid-template-columns: 1fr;
+  }
+
+  .sos-ready-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .sos-contact-actions,
+  .saved-contacts-control {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sos-secondary-btn,
+  #sos-saved-select {
+    width: 100%;
   }
 }
 /* </style> */
